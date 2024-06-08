@@ -30,39 +30,25 @@ namespace CustomFile
         #endregion Import from kernel32
 
         private const int MAX_PATH = 260;
-
         private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
-        private static string MakePath(string path, string searchPattern)
-        {
-            if (!path.EndsWith('\\')) path += "\\";
-            return Path.Combine(path, searchPattern);
-        }
+        public static IEnumerable<string> GetDirectories(string path, string searchPattern) => GetInternal(path, searchPattern, true);
+        public static IEnumerable<string> GetFiles(string path, string searchPattern) => GetInternal(path, searchPattern, false);
 
-        public static IEnumerable<string> GetDirectories(string path, string searchPattern)
-        {
-            return GetInternal(path, searchPattern, true);
-        }
-
-        public static IEnumerable<string> GetFiles(string path, string searchPattern)
-        {
-            return GetInternal(path, searchPattern, false);
-        }
-
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern bool FindClose(IntPtr hFindFile);
 
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern IntPtr FindFirstFileW(string lpFileName,
                                                    out WIN32_FIND_DATA lpFindFileData);
 
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern bool FindNextFileW(IntPtr hFindFile,
                                                 out WIN32_FIND_DATA lpFindFileData);
 
         private static IEnumerable<string> GetInternal(string path, string searchPattern, bool isGetDirs)
         {
-            var findHandle = FindFirstFileW(MakePath(path, searchPattern), out WIN32_FIND_DATA findData);
+            var findHandle = FindFirstFileW(Path.Combine(path, searchPattern), out WIN32_FIND_DATA findData);
 
             if (findHandle == INVALID_HANDLE_VALUE) yield break;
             try

@@ -9,17 +9,14 @@ namespace LightingFile
     [Serializable]
     public class LightingFileInfo
     {
-
-        public readonly FileAttributes Attributes;
         public readonly long Length;
         public readonly string Name;
         public readonly string AlternateName;
         public readonly string FullName;
-        private static readonly char[] separator = ['|'];
-
+        public readonly FileAttributes Attributes;
         public string? DirectoryName => Path.GetDirectoryName(FullName);
         public bool Exists => File.Exists(FullName);
-        public override string ToString() => Name;
+        public override string ToString() => FullName;
         public LightingFileInfo(string filename) : this(new FileInfo(filename)) { }
 
         public LightingFileInfo(FileInfo file)
@@ -46,8 +43,9 @@ namespace LightingFile
         public static IEnumerable<LightingFileInfo> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, IFolderFilter folderFilter)
         {
             ExceptionHandle(path, searchPattern, searchOption);
-            return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, null, false);
+            return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, folderFilter, false);
         }
+
         public static IEnumerable<LightingFileInfo> EnumerateFiles(string path) => EnumerateFiles(path, "*");
         public static IEnumerable<LightingFileInfo> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, null);
         public static IEnumerable<LightingFileInfo> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, searchOption, null);
@@ -55,55 +53,6 @@ namespace LightingFile
         {
             ExceptionHandle(path, searchPattern, searchOption);
             return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, folderFilter, true);
-        }
-
-        public static IList<LightingFileInfo> GetFiles2(string path, string searchPattern = "*", bool searchSubfolders = false)
-        {
-            var searchOption = searchSubfolders ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-            return GetFiles(path, searchPattern, searchOption);
-        }
-        public static IList<LightingFileInfo> GetFiles(string path, string searchPattern = "*", SearchOption searchOption = SearchOption.TopDirectoryOnly, IFolderFilter folderFilter = null)
-        {
-            var list = new List<LightingFileInfo>();
-            string[] arr = searchPattern.Split(separator, StringSplitOptions.RemoveEmptyEntries);
-            Hashtable ht = (arr.Length > 1 ? new Hashtable() : null); // don't need to worry about case since it should be consistent
-            foreach (string sp in arr)
-            {
-                string sp2 = sp.Trim();
-                if (sp2.Length == 0)
-                    continue;
-
-                IEnumerable<LightingFileInfo> e = EnumerateFiles(path, sp2, searchOption, folderFilter);
-                if (ht == null)
-                    list.AddRange(e);
-                else
-                {
-                    var e2 = e.GetEnumerator();
-                    if (ht.Count == 0)
-                    {
-                        while (e2.MoveNext())
-                        {
-                            LightingFileInfo f = e2.Current;
-                            list.Add(f);
-                            ht[f.FullName] = f;
-                        }
-                    }
-                    else
-                    {
-                        while (e2.MoveNext())
-                        {
-                            LightingFileInfo f = e2.Current;
-                            if (!ht.Contains(f.FullName))
-                            {
-                                list.Add(f);
-                                ht[f.FullName] = f;
-                            }
-                        }
-                    }
-                }
-            }
-
-            return list;
         }
 
         private static void ExceptionHandle(string path, string searchPattern, SearchOption searchOption)
@@ -149,7 +98,6 @@ namespace LightingFile
             private static extern SafeFindHandle FindFirstFileEx(string fileName, int infoLevel, [In, Out] WIN32_FIND_DATA data, int searchScope, string notUsedNull, int additionalFlags);
 
             private string initialFolder;
-            private SearchOption searchOption;
             private string searchFilter;
             private IFolderFilter folderFilter;
             //---
@@ -161,8 +109,6 @@ namespace LightingFile
             private List<string> pendingFolders;
             private Queue<IList<string>> queue;
             private bool stepToNext;
-            private bool usePendingFolders = false;
-            private bool useGetDirectories = false;
             private bool isCurrent = false;
             //---
             private readonly bool useEx = false;
@@ -186,10 +132,7 @@ namespace LightingFile
             {
                 this.initialFolder = initialFolder;
                 this.searchFilter = searchFilter;
-                this.searchOption = searchOption;
                 this.folderFilter = folderFilter;
-                usePendingFolders = (searchFilter == "*" || searchFilter == "*.*") && searchOption == SearchOption.AllDirectories;
-                useGetDirectories = !usePendingFolders && searchOption == SearchOption.AllDirectories;
                 Reset();
             }
 
@@ -267,7 +210,7 @@ namespace LightingFile
 
                 string searchPath = Path.Combine(folder, searchFilter);
                 if (useEx)
-                    hndFile = FindFirstFileEx(searchPath, infoLevel, findData, searchScope, null, additionalFlags);
+                    hndFile = FindFirstFileEx(searchPath, infoLevel, findData, 1, null, additionalFlags);
                 else
                     hndFile = FindFirstFile(searchPath, findData);
                 currentFolder = folder;
