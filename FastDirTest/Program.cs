@@ -3,64 +3,63 @@ using LightingFile;
 using CustomFile;
 using System.Diagnostics;
 using System.Collections.Concurrent;
-using System.Security.AccessControl;
 
 namespace FastDirTest
 {
     internal class Program
     {
         internal static Stopwatch stopwatch = new();
-        internal static readonly string[] separator = ["\r\n"];
-        internal static readonly string searchPath = @"C:\Users\";
+        internal static string SearchPath { get; } = @"C:\";
+        internal static string[] Separator { get; } = ["\r\n"];
 
         private static void Main(string[] args)
         {
             Console.WriteLine("Hello, World!");
 
             stopwatch.Start();
-            var lightingList = LightingFileInfo.EnumerateFiles(searchPath, "*", SearchOption.AllDirectories);
+            var lightingList = LightingFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories);
             var count = lightingList.Count();
             stopwatch.Stop();
             Console.WriteLine($"Result time({nameof(lightingList)}): {stopwatch.Elapsed} count: {count}");
 
             stopwatch.Start();
-            var fastList = FastFileInfo.EnumerateFiles(searchPath, "*", SearchOption.AllDirectories, null);
+            var fastList = FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null);
             var fastCount = fastList.Count();
             stopwatch.Stop();
             Console.WriteLine($"Result time({nameof(fastList)}): {stopwatch.Elapsed} count: {fastCount}");
 
             stopwatch.Start();
-            var getList = FastFileInfo.GetFiles(searchPath, "*", SearchOption.AllDirectories);
+            var getList = FastFileInfo.GetFiles(SearchPath, "*", SearchOption.AllDirectories);
             var getCount = getList.Count;
             stopwatch.Stop();
             Console.WriteLine($"Result time({nameof(getList)}): {stopwatch.Elapsed} count: {getCount}");
 
             stopwatch.Start();
-            var customList = CustomFileInfo.GetAllFiles(searchPath, -1, searchPath.Split('\\').Length);
+            var customList = CustomFileInfo.GetAllFiles(SearchPath, -1, SearchPath.Split('\\').Length);
             var customCount = customList.Count;
             stopwatch.Stop();
             Console.WriteLine($"Result time({nameof(customList)}): {stopwatch.Elapsed} count: {customCount}");
 
             stopwatch.Start();
-            var v1List = V1GetFiles(searchPath);
+            var v1List = V1GetFiles(SearchPath);
             var v1Count = v1List.Count();
             stopwatch.Stop();
             Console.WriteLine($"Result time({nameof(v1List)}): {stopwatch.Elapsed} count: {v1Count}");
 
             stopwatch.Start();
-            var v2List = V2GetFiles(searchPath);
+            var v2List = V2GetFiles(SearchPath);
             var v2Count = v2List.Count();
             stopwatch.Stop();
             Console.WriteLine($"Result time({nameof(v2List)}): {stopwatch.Elapsed} count: {v2Count}");
 
             stopwatch.Start();
-            var cmdList = GetAllFilesWithCMD(searchPath);
+            var cmdList = GetAllFilesWithCMD(SearchPath);
             var cmdCount = cmdList.Count();
             stopwatch.Stop();
             Console.WriteLine($"Result time({nameof(cmdList)}): {stopwatch.Elapsed} count: {cmdCount}");
 
             stopwatch.Start();
-            var psList = GetAllFilesWithPowerShell(searchPath);
+            var psList = GetAllFilesWithPowerShell(SearchPath);
             var psCount = psList.Count();
             stopwatch.Stop();
             Console.WriteLine($"Result time({nameof(psList)}): {stopwatch.Elapsed} count: {psCount}");
@@ -87,7 +86,7 @@ namespace FastDirTest
             var cmdOutput = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
 
-            return [.. cmdOutput.Split(separator, StringSplitOptions.RemoveEmptyEntries)];
+            return [.. cmdOutput.Split(Separator, StringSplitOptions.RemoveEmptyEntries)];
         }
         private static IEnumerable<string> GetAllDirectoriesWithCMD(string searchPath)
         {
@@ -107,7 +106,7 @@ namespace FastDirTest
             var cmdOutput = process.StandardOutput.ReadToEnd();
             process.WaitForExit();
 
-            return [.. cmdOutput.Split(separator, StringSplitOptions.RemoveEmptyEntries)];
+            return [.. cmdOutput.Split(Separator, StringSplitOptions.RemoveEmptyEntries)];
         }
         private static IEnumerable<string> GetAllFilesWithPowerShell(string searchPath)
         {
@@ -200,30 +199,22 @@ namespace FastDirTest
         private static IEnumerable<string> V2GetFiles(string path)
         {
             var filesBag = new ConcurrentBag<string>();
+
             try
             {
-                var dirs = Directory.EnumerateDirectories(path, "*", SearchOption.TopDirectoryOnly);
-                Parallel.ForEach(dirs, (dir) =>{
-                    var recursiveFiles = V2GetFiles(dir);
-                    foreach (var file in recursiveFiles)
-                        filesBag.Add(file);
-                });
-                Parallel.ForEach(dirs, (dir) =>
+                var dirs = Directory.EnumerateDirectories(path, "*", SearchOption.TopDirectoryOnly).AsParallel();
+                var files = Directory.EnumerateFiles(path, "*", SearchOption.TopDirectoryOnly).AsParallel();
+                Parallel.ForEach(files, filesBag.Add);
+                Parallel.ForEach(dirs, dir =>
                 {
-                    try
-                    {
-                        foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.TopDirectoryOnly))
-                            filesBag.Add(file);
-                    }
-                    catch (Exception) { return; }
-
+                    try { Parallel.ForEach(V2GetFiles(dir), filesBag.Add); }
+                    catch { return; }
                 });
-                return filesBag;
             }
-            catch (Exception)
-            {
-                return [];
-            }
+            catch
+            { return []; }
+
+            return filesBag;
         }
 
     }
