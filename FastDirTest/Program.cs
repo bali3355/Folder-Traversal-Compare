@@ -1,71 +1,48 @@
 ﻿using FastFile;
-using LightingFile;
-using CustomFile;
-using System.Diagnostics;
+using FastFileV2;
+using FastFileV3;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 
 namespace FastDirTest
 {
+    public static class StopwatchExtensions
+    {
+        public static (Stopwatch, TimeSpan) End(this Stopwatch stopwatch)
+        {
+            if (!stopwatch.IsRunning) return (stopwatch, TimeSpan.Zero);
+            var time = stopwatch.Elapsed;
+            stopwatch.Reset();
+            return (stopwatch, time);
+
+        }
+    }
     internal class Program
     {
         internal static Stopwatch stopwatch = new();
+        internal static int Count { get; set; }
         internal static string SearchPath { get; } = @"C:\";
         internal static string[] Separator { get; } = ["\r\n"];
-
-        private static void Main(string[] args)
+        internal static TimeSpan Time { get; set; }
+        private static IEnumerable<string> GetAllDirectoriesWithCMD(string searchPath)
         {
-            Console.WriteLine("Hello, World!");
+            using var process = new Process
+            {
+                StartInfo =
+                {
+                    FileName = "cmd.exe",
+                    Arguments = $"chcp 850 | /C dir /AD /B /S \"{searchPath}\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                }
+            };
 
-            stopwatch.Start();
-            var lightingList = LightingFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories);
-            var count = lightingList.Count();
-            stopwatch.Stop();
-            Console.WriteLine($"Result time({nameof(lightingList)}): {stopwatch.Elapsed} count: {count}");
+            process.Start();
+            var cmdOutput = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
 
-            stopwatch.Start();
-            var fastList = FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null);
-            var fastCount = fastList.Count();
-            stopwatch.Stop();
-            Console.WriteLine($"Result time({nameof(fastList)}): {stopwatch.Elapsed} count: {fastCount}");
-
-            stopwatch.Start();
-            var getList = FastFileInfo.GetFiles(SearchPath, "*", SearchOption.AllDirectories);
-            var getCount = getList.Count;
-            stopwatch.Stop();
-            Console.WriteLine($"Result time({nameof(getList)}): {stopwatch.Elapsed} count: {getCount}");
-
-            stopwatch.Start();
-            var customList = CustomFileInfo.GetAllFiles(SearchPath, -1, SearchPath.Split('\\').Length);
-            var customCount = customList.Count;
-            stopwatch.Stop();
-            Console.WriteLine($"Result time({nameof(customList)}): {stopwatch.Elapsed} count: {customCount}");
-
-            stopwatch.Start();
-            var v1List = V1GetFiles(SearchPath);
-            var v1Count = v1List.Count();
-            stopwatch.Stop();
-            Console.WriteLine($"Result time({nameof(v1List)}): {stopwatch.Elapsed} count: {v1Count}");
-
-            stopwatch.Start();
-            var v2List = V2GetFiles(SearchPath);
-            var v2Count = v2List.Count();
-            stopwatch.Stop();
-            Console.WriteLine($"Result time({nameof(v2List)}): {stopwatch.Elapsed} count: {v2Count}");
-
-            stopwatch.Start();
-            var cmdList = GetAllFilesWithCMD(SearchPath);
-            var cmdCount = cmdList.Count();
-            stopwatch.Stop();
-            Console.WriteLine($"Result time({nameof(cmdList)}): {stopwatch.Elapsed} count: {cmdCount}");
-
-            stopwatch.Start();
-            var psList = GetAllFilesWithPowerShell(SearchPath);
-            var psCount = psList.Count();
-            stopwatch.Stop();
-            Console.WriteLine($"Result time({nameof(psList)}): {stopwatch.Elapsed} count: {psCount}");
-
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey();
+            return [.. cmdOutput.Split(Separator, StringSplitOptions.RemoveEmptyEntries)];
         }
 
         private static IEnumerable<string> GetAllFilesWithCMD(string searchPath)
@@ -88,26 +65,7 @@ namespace FastDirTest
 
             return [.. cmdOutput.Split(Separator, StringSplitOptions.RemoveEmptyEntries)];
         }
-        private static IEnumerable<string> GetAllDirectoriesWithCMD(string searchPath)
-        {
-            using var process = new Process
-            {
-                StartInfo =
-                {
-                    FileName = "cmd.exe",
-                    Arguments = $"chcp 850 | /C dir /AD /B /S \"{searchPath}\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    CreateNoWindow = true
-                }
-            };
 
-            process.Start();
-            var cmdOutput = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-
-            return [.. cmdOutput.Split(Separator, StringSplitOptions.RemoveEmptyEntries)];
-        }
         private static IEnumerable<string> GetAllFilesWithPowerShell(string searchPath)
         {
             var powershellArgs = @"
@@ -144,6 +102,7 @@ namespace FastDirTest
 
             return [.. cmdOutput.Split("\n", StringSplitOptions.RemoveEmptyEntries)];
         }
+
         private static IEnumerable<string> GetAllFoldersWithPowerShell(string searchPath)
         {
             var powershellArgs = @"
@@ -176,6 +135,69 @@ namespace FastDirTest
             process.WaitForExit();
 
             return [.. cmdOutput.Split("\n", StringSplitOptions.RemoveEmptyEntries)];
+        }
+
+        private static void Main(string[] args)
+        {
+            Console.WriteLine("Hello, World!");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null), "FastFileInfo");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(FastFileInfo.GetFiles(SearchPath, "*", SearchOption.AllDirectories), "FastFileInfoGetFiles");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(FastFileInfoV2.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null), "FastFileInfoV2");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(FastFileInfoV3.GetAllFiles(SearchPath, -1, SearchPath.Split('\\').Length), "FastFileInfoV3.GetAllFiles");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(FastFileInfoV3.GetAllFilesV2(SearchPath), "FastFileInfoV3.GetAllFilesV2");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(FastFileInfoV3.GetAllFilesV3(SearchPath), "FastFileInfoV3.GetAllFilesV3");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(V1GetFiles(SearchPath), "V1GetFiles");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(V2GetFiles(SearchPath), "V2GetFiles");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(GetAllFilesWithCMD(SearchPath), "GetAllFilesWithCMD");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(GetAllFilesWithPowerShell(SearchPath), "GetAllFilesWithPowerShell");
+
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
+        }
+
+        private static void TestEnumeratingFiles(IEnumerable<string> listOfFiles, string name)
+        {
+            Count = listOfFiles.Count();
+            Time = stopwatch.End().Item2;
+            Console.WriteLine($"Result Time({name}): {Time} count: {Count}");
+        }
+        private static void TestEnumeratingFiles(IEnumerable<FastFileInfo> listOfFiles, string name)
+        {
+            Count = listOfFiles.Count();
+            Time = stopwatch.End().Item2;
+            Console.WriteLine($"Result Time({name}): {Time} count: {Count}");
+        }
+        private static void TestEnumeratingFiles(IEnumerable<FastFileInfoV2> listOfFiles, string name)
+        {
+            Count = listOfFiles.Count();
+            Time = stopwatch.End().Item2;
+            Console.WriteLine($"Result Time({name}): {Time} count: {Count}");
+        }
+        private static void TestEnumeratingFiles(IEnumerable<FastFileInfoV3> listOfFiles, string name)
+        {
+            Count = listOfFiles.Count();
+            Time = stopwatch.End().Item2;
+            Console.WriteLine($"Result Time({name}): {Time} count: {Count}");
         }
         private static IEnumerable<string> V1GetFiles(string path)
         {

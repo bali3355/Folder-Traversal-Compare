@@ -2,9 +2,13 @@
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 
-namespace CustomFile
+namespace FastFileV3
 {
-    internal class CustomFileInfo
+    /// <summary>
+    ///  Based on this code:
+    ///  <see href="https://web.archive.org/web/20130426032447/http://codepaste.net/msm8b1"/>
+    /// </summary>
+    internal class FastFileInfoV3
     {
         #region Import from kernel32
 
@@ -55,7 +59,7 @@ namespace CustomFile
             {
                 do
                 {
-                    if (findData.cFileName == "." || findData.cFileName == "..") continue;
+                    if (findData.cFileName == "." || findData.cFileName == ".." || findData.cFileName == "thumbs.db") continue;
                     if (isGetDirs
                             ? (findData.dwFileAttributes & FileAttributes.Directory) != 0
                             : (findData.dwFileAttributes & FileAttributes.Directory) == 0)
@@ -92,7 +96,6 @@ namespace CustomFile
             var subFiles = GetFiles(path, "*");
             _ = Parallel.ForEach(subFiles, (subFile) =>
             {
-                if (subFile.Contains("Thumbs.db")) return;
                 allFiles.Add(Path.Combine(path, subFile));
             });
 
@@ -102,6 +105,35 @@ namespace CustomFile
                 var relativePath = Path.Combine(path, subDir);
                 Parallel.ForEach(GetAllFiles(relativePath, deepness, rootLength), (file) => allFiles.Add(file));
             });
+            return allFiles;
+        }
+
+        public static ConcurrentBag<string> GetAllFilesV2(string path)
+        {
+            var allFiles = new ConcurrentBag<string>();
+            var queue = new ConcurrentQueue<string>([path]);
+
+            while (queue.TryDequeue(out var currentPath))
+            {
+                foreach (var subDir in GetDirectories(currentPath, "*")) queue.Enqueue(subDir);
+                foreach (var subFile in GetFiles(currentPath, "*")) allFiles.Add(subFile);
+            }
+            return allFiles;
+        }
+
+        public static ConcurrentBag<string> GetAllFilesV3(string path)
+        {
+            var allFiles = new ConcurrentBag<string>();
+            var subFiles = GetFiles(path, "*");
+            foreach (var subFile in subFiles)
+            {
+                allFiles.Add(Path.Combine(path, subFile));
+            }
+            foreach (var subDir in GetDirectories(path, "*"))
+            {
+                foreach (var subFile in GetAllFilesV3(Path.Combine(path, subDir)))
+                { allFiles.Add(subFile); }
+            }
             return allFiles;
         }
     }

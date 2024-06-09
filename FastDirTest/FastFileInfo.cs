@@ -9,6 +9,7 @@ namespace FastFile
 
     /// <summary>
     /// A faster way to get file information than System.IO.FileInfo.
+    /// <see href="https://sourceforge.net/projects/fastfileinfo/"/>
     /// </summary>
     /// <remarks>
     /// This enumerator is substantially faster than using <see cref="Directory.GetFiles(string)"/>

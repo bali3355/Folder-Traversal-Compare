@@ -4,10 +4,13 @@ using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
 using System.Security.Permissions;
 
-namespace LightingFile
+namespace FastFileV2
 {
+    /// <summary>
+    /// Based on Opulus FastFile <see cref="FastFile.FastFileInfo"/>
+    /// </summary>
     [Serializable]
-    public class LightingFileInfo
+    public class FastFileInfoV2
     {
         public readonly long Length;
         public readonly string Name;
@@ -17,9 +20,9 @@ namespace LightingFile
         public string? DirectoryName => Path.GetDirectoryName(FullName);
         public bool Exists => File.Exists(FullName);
         public override string ToString() => FullName;
-        public LightingFileInfo(string filename) : this(new FileInfo(filename)) { }
+        public FastFileInfoV2(string filename) : this(new FileInfo(filename)) { }
 
-        public LightingFileInfo(FileInfo file)
+        public FastFileInfoV2(FileInfo file)
         {
             Name = file.Name;
             FullName = file.FullName;
@@ -29,7 +32,7 @@ namespace LightingFile
                 Attributes = file.Attributes;
             }
         }
-        internal LightingFileInfo(string dir, WIN32_FIND_DATA findData)
+        internal FastFileInfoV2(string dir, WIN32_FIND_DATA findData)
         {
             Attributes = findData.dwFileAttributes;
             Length = CombineHighLowInts(findData.nFileSizeHigh, findData.nFileSizeLow);
@@ -37,19 +40,19 @@ namespace LightingFile
             AlternateName = findData.cAlternateFileName;
             FullName = Path.Combine(dir, findData.cFileName);
         }
-        public static IEnumerable<LightingFileInfo> EnumerateDirectories(string path) => EnumerateDirectories(path, "*");
-        public static IEnumerable<LightingFileInfo> EnumerateDirectories(string path, string searchPattern) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly);
-        public static IEnumerable<LightingFileInfo> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption) => EnumerateDirectories(path, searchPattern, searchOption, null);
-        public static IEnumerable<LightingFileInfo> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, IFolderFilter folderFilter)
+        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path) => EnumerateDirectories(path, "*");
+        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly);
+        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption) => EnumerateDirectories(path, searchPattern, searchOption, null);
+        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, IFolderFilter folderFilter)
         {
             ExceptionHandle(path, searchPattern, searchOption);
             return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, folderFilter, false);
         }
 
-        public static IEnumerable<LightingFileInfo> EnumerateFiles(string path) => EnumerateFiles(path, "*");
-        public static IEnumerable<LightingFileInfo> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, null);
-        public static IEnumerable<LightingFileInfo> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, searchOption, null);
-        public static IEnumerable<LightingFileInfo> EnumerateFiles(string path, string searchPattern, SearchOption searchOption, IFolderFilter folderFilter)
+        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path) => EnumerateFiles(path, "*");
+        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, null);
+        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, searchOption, null);
+        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption, IFolderFilter folderFilter)
         {
             ExceptionHandle(path, searchPattern, searchOption);
             return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, folderFilter, true);
@@ -63,9 +66,9 @@ namespace LightingFile
                 throw new ArgumentOutOfRangeException(nameof(searchOption));
         }
 
-        private class FileEnumerable(string path, string filter, SearchOption searchOption, IFolderFilter folderFilter, bool searchForFiles) : IEnumerable<LightingFileInfo>
+        private class FileEnumerable(string path, string filter, SearchOption searchOption, IFolderFilter folderFilter, bool searchForFiles) : IEnumerable<FastFileInfoV2>
         {
-            public IEnumerator<LightingFileInfo> GetEnumerator() => new FileEnumerator(path, filter, searchOption, folderFilter, searchForFiles, true, false, false);
+            public IEnumerator<FastFileInfoV2> GetEnumerator() => new FileEnumerator(path, filter, searchOption, folderFilter, searchForFiles, true, false, false);
             IEnumerator IEnumerable.GetEnumerator() => new FileEnumerator(path, filter, searchOption, folderFilter, searchForFiles, true, false, false);
         }
 
@@ -86,7 +89,7 @@ namespace LightingFile
         }
 
         [System.Security.SuppressUnmanagedCodeSecurity]
-        public class FileEnumerator : IEnumerator<LightingFileInfo>
+        public class FileEnumerator : IEnumerator<FastFileInfoV2>
         {
             [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
             private static extern SafeFindHandle FindFirstFile(string fileName, [In, Out] WIN32_FIND_DATA data);
@@ -136,7 +139,7 @@ namespace LightingFile
                 Reset();
             }
 
-            public LightingFileInfo Current => new(currentFolder, findData);
+            public FastFileInfoV2 Current => new(currentFolder, findData);
 
             public void Dispose()
             {
@@ -145,7 +148,7 @@ namespace LightingFile
                 GC.SuppressFinalize(this);
             }
 
-            object IEnumerator.Current => new LightingFileInfo(currentFolder, findData);
+            object IEnumerator.Current => new FastFileInfoV2(currentFolder, findData);
 
             public bool MoveNext()
             {
@@ -160,7 +163,7 @@ namespace LightingFile
                             var cFilename = findData.cFileName;
                             if (cFilename != "." && cFilename != "..")
                             {
-                                if (folderFilter == null || folderFilter.SearchFolder(new LightingFileInfo(currentFolder, findData)))
+                                if (folderFilter == null || folderFilter.SearchFolder(new FastFileInfoV2(currentFolder, findData)))
                                     pendingFolders.Add(Path.Combine(currentFolder, cFilename));
                                 if (searchScope == 1)
                                 {
@@ -261,6 +264,6 @@ namespace LightingFile
 
     public interface IFolderFilter
     {
-        bool SearchFolder(LightingFileInfo folder);
+        bool SearchFolder(FastFileInfoV2 folder);
     }
 }
