@@ -67,27 +67,7 @@ namespace FastDirTest
             Console.ReadKey();
         }
 
-        private static void TestEnumeratingFiles(IEnumerable<string> listOfFiles, string name)
-        {
-            Count = listOfFiles.Count();
-            Time = stopwatch.End();
-            Console.WriteLine($"| {name,-nameWidth} | {Time,-timeWidth} | {Count,-countWidth} |");
-        }
-        private static void TestEnumeratingFiles(IEnumerable<FastFileInfo> listOfFiles, string name)
-        {
-            Count = listOfFiles.Count();
-            Time = stopwatch.End();
-            Console.WriteLine($"| {name,-nameWidth} | {Time,-timeWidth} | {Count,-countWidth} |");
-
-        }
-        private static void TestEnumeratingFiles(IEnumerable<FastFileInfoV2> listOfFiles, string name)
-        {
-            Count = listOfFiles.Count();
-            Time = stopwatch.End();
-            Console.WriteLine($"| {name,-nameWidth} | {Time,-timeWidth} | {Count,-countWidth} |");
-
-        }
-        private static void TestEnumeratingFiles(IEnumerable<FastFileInfoV3> listOfFiles, string name)
+        private static void TestEnumeratingFiles<T>(IEnumerable<T> listOfFiles, string name)
         {
             Count = listOfFiles.Count();
             Time = stopwatch.End();
