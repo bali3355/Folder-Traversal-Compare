@@ -10,4 +10,6 @@ Used solutions:
 
 These algorithms are able to go through AccessDenied problems, that EnumerateFiles has.
 
+![image](https://github.com/bali3355/Enumerator-Comparing/assets/12228795/2cfcf52f-38de-434a-aaad-4226920643b0)
+
 #### *Use them as you like, while give it a star!*
