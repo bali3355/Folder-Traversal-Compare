@@ -107,11 +107,7 @@ namespace FastFileV2
             private string currentFolder;
             private SafeFindHandle hndFile;
             private WIN32_FIND_DATA findData;
-            private int currentPathIndex;
-            private IList<string> currentPaths;
-            private List<string> pendingFolders;
-            private Queue<IList<string>> queue;
-            private bool stepToNext;
+            private Queue<string> queue;
             private bool isCurrent = false;
             //---
             private readonly bool useEx = false;
@@ -146,6 +142,7 @@ namespace FastFileV2
                 hndFile?.Dispose();
                 hndFile = null;
                 GC.SuppressFinalize(this);
+                GC.Collect();
             }
 
             object IEnumerator.Current => new FastFileInfoV2(currentFolder, findData);
@@ -154,82 +151,50 @@ namespace FastFileV2
             {
                 while (true)
                 {
-                    if (stepToNext) isCurrent = FindNextFile(hndFile, findData);
+                    isCurrent = FindNextFile(hndFile, findData);
 
-                    if (isCurrent || !stepToNext)
+                    while (findData.dwFileAttributes.HasFlag(FileAttributes.Directory) && isCurrent)
                     {
-                        while (findData.dwFileAttributes.HasFlag(FileAttributes.Directory))
+                        var cFilename = findData.cFileName;
+                        if (cFilename is not "." and not "..")
                         {
-                            var cFilename = findData.cFileName;
-                            if (cFilename != "." && cFilename != "..")
-                            {
-                                if (folderFilter == null || folderFilter.SearchFolder(new FastFileInfoV2(currentFolder, findData)))
-                                    pendingFolders.Add(Path.Combine(currentFolder, cFilename));
-                                if (searchScope == 1)
-                                {
-                                    stepToNext = true;
-                                    return true;
-                                }
-
-                            }
-                            isCurrent = FindNextFile(hndFile, findData);
-                            if (!isCurrent) break;
+                            queue.Enqueue(Path.Combine(currentFolder, cFilename));
+                            if (searchScope == 1) return true;
                         }
+                        isCurrent = FindNextFile(hndFile, findData);
                     }
-                    stepToNext = true;
+
                     if (isCurrent)
                     {
                         if (searchScope == 0) return true;
                         continue;
                     }
 
-                    if (pendingFolders.Count > 0)
-                    {
-                        queue.Enqueue(pendingFolders);
-                        pendingFolders = [];
-                    }
-
-                    currentPathIndex++;
-                    if (currentPathIndex == currentPaths.Count)
-                    {
-                        if (queue.Count == 0)
-                        {
-                            currentPathIndex--; // so that calling MoveNext() after very last has no impact
-                            return false; // no more paths to process
-                        }
-                        currentPaths = queue.Dequeue();
-                        currentPathIndex = 0;
-                    }
+                    if (queue.Count == 0) return false;
 
                     // Initialize the next folder for processing
-                    string f = currentPaths[currentPathIndex];
-                    InitFolder(f);
+                    InitFolder(queue.Dequeue());
                 }
             }
 
             private void InitFolder(string folder)
             {
                 hndFile?.Dispose();
-
                 string searchPath = Path.Combine(folder, searchFilter);
                 if (useEx)
                     hndFile = FindFirstFileEx(searchPath, infoLevel, findData, 1, null, additionalFlags);
                 else
                     hndFile = FindFirstFile(searchPath, findData);
                 currentFolder = folder;
-                stepToNext = false;
                 isCurrent = !hndFile.IsInvalid; // e.g. unaccessible C:\System Volume Information or filter like *.txt in a directory with no text files
             }
 
             public void Reset()
             {
-                currentPathIndex = 0;
-                stepToNext = false;
                 isCurrent = false;
-                currentPaths = [initialFolder];
+                currentFolder = initialFolder;
                 findData = new WIN32_FIND_DATA();
-                pendingFolders = [];
-                queue = new Queue<IList<string>>();
+                queue = new Queue<string>();
                 InitFolder(initialFolder);
             }
         }
