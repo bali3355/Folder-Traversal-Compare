@@ -4,10 +4,12 @@ using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
 using System.Security.Permissions;
 
+
+
 namespace FastFileV2
 {
     /// <summary>
-    /// Based on Opulus FastFile <see cref="FastFile.FastFileInfo"/>
+    /// Based on Opulus FastFileInfo <see cref="FastFile.FastFileInfo"/>
     /// </summary>
     [Serializable]
     public class FastFileInfoV2
@@ -42,20 +44,21 @@ namespace FastFileV2
         }
         public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path) => EnumerateDirectories(path, "*");
         public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly);
-        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption) => EnumerateDirectories(path, searchPattern, searchOption, null);
-        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, IFolderFilter folderFilter)
+        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Directories);
+        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
         {
             ExceptionHandle(path, searchPattern, searchOption);
-            return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, folderFilter, false);
+            return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, searchFor);
         }
 
         public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path) => EnumerateFiles(path, "*");
-        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, null);
-        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, searchOption, null);
-        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption, IFolderFilter folderFilter)
+        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly);
+        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Files);
+
+        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
         {
             ExceptionHandle(path, searchPattern, searchOption);
-            return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, folderFilter, true);
+            return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, searchFor);
         }
 
         private static void ExceptionHandle(string path, string searchPattern, SearchOption searchOption)
@@ -66,10 +69,10 @@ namespace FastFileV2
                 throw new ArgumentOutOfRangeException(nameof(searchOption));
         }
 
-        private class FileEnumerable(string path, string filter, SearchOption searchOption, IFolderFilter folderFilter, bool searchForFiles) : IEnumerable<FastFileInfoV2>
+        private class FileEnumerable(string path, string filter, SearchOption searchOption, SearchFor searchFor) : IEnumerable<FastFileInfoV2>
         {
-            public IEnumerator<FastFileInfoV2> GetEnumerator() => new FileEnumerator(path, filter, searchOption, folderFilter, searchForFiles, true, false, false);
-            IEnumerator IEnumerable.GetEnumerator() => new FileEnumerator(path, filter, searchOption, folderFilter, searchForFiles, true, false, false);
+            public IEnumerator<FastFileInfoV2> GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
+            IEnumerator IEnumerable.GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
         }
 
         // Wraps a FindFirstFile handle.
@@ -100,102 +103,93 @@ namespace FastFileV2
             [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
             private static extern SafeFindHandle FindFirstFileEx(string fileName, int infoLevel, [In, Out] WIN32_FIND_DATA data, int searchScope, string notUsedNull, int additionalFlags);
 
-            private string initialFolder;
-            private string searchFilter;
-            private IFolderFilter folderFilter;
+            private string InitialFolder { get; set; }
+            private string SearchFilter { get; set; }
             //---
-            private string currentFolder;
-            private SafeFindHandle hndFile;
-            private WIN32_FIND_DATA findData;
-            private Queue<string> queue;
-            private bool isCurrent = false;
+            private string CurrentFolder { get; set; }
+            private SafeFindHandle HndFile { get; set; }
+            private WIN32_FIND_DATA FindData { get; set; }
+            private Stack<string> FolderStack { get; set; }
+            private bool IsCurrent { get; set; } = false;
+            private bool StepToNext { get; set; }
             //---
-            private readonly bool useEx = false;
-            private readonly int infoLevel = 0;
-            private readonly int searchScope = 0;
-            private readonly int additionalFlags = 0;
+            private int InfoLevel { get; } = 0;
+            private int SearchScope { get; } = 0;
+            private bool UseEx { get; } = false;
+            private int AdditionalFlags { get; } = 0;
 
-            public FileEnumerator(string initialFolder, string searchFilter, SearchOption searchOption, IFolderFilter folderFilter) => Init(initialFolder, searchFilter, searchOption, folderFilter);
+            public FileEnumerator(string initialFolder, string searchFilter, SearchOption searchOption) => Init(initialFolder, searchFilter, searchOption);
 
-            public FileEnumerator(string initialFolder, string searchFilter, SearchOption searchOption, IFolderFilter folderFilter, bool searchForFiles, bool basicInfoOnly, bool caseSensitive, bool largeBuffer)
+            public FileEnumerator(string initialFolder, string searchFilter, SearchOption searchOption, SearchFor searchScope, bool basicInfoOnly, bool caseSensitive, bool largeBuffer)
             {
-                Init(initialFolder, searchFilter, searchOption, folderFilter);
-                searchScope = searchForFiles ? 0 : 1; // 0 = files, 1 = limit to directories
-                useEx = true;
-                infoLevel = basicInfoOnly ? 1 : 0; // 0 is standard (includes the cAlternateName, which is the short name with the tidle character)
-                additionalFlags |= caseSensitive ? 1 : 0;
-                additionalFlags |= largeBuffer ? 2 : 0;
+                Init(initialFolder, searchFilter, searchOption);
+                SearchScope = (int)searchScope; // 0 = files, 1 = directories, 2 = files and directories
+                UseEx = true;
+                InfoLevel = basicInfoOnly ? 1 : 0; // 0 is standard (includes the cAlternateName, which is the short name with the tidle character)
+                AdditionalFlags |= caseSensitive ? 1 : 0;
+                AdditionalFlags |= largeBuffer ? 2 : 0;
             }
 
-            private void Init(string initialFolder, string searchFilter, SearchOption searchOption, IFolderFilter folderFilter)
+            private void Init(string initialFolder, string searchFilter, SearchOption searchOption)
             {
-                this.initialFolder = initialFolder;
-                this.searchFilter = searchFilter;
-                this.folderFilter = folderFilter;
+                InitialFolder = initialFolder;
+                SearchFilter = searchFilter;
                 Reset();
             }
 
-            public FastFileInfoV2 Current => new(currentFolder, findData);
+            public FastFileInfoV2 Current => new(CurrentFolder, FindData);
 
             public void Dispose()
             {
-                hndFile?.Dispose();
-                hndFile = null;
+                HndFile?.Dispose();
+                HndFile = null;
                 GC.SuppressFinalize(this);
-                GC.Collect();
             }
 
-            object IEnumerator.Current => new FastFileInfoV2(currentFolder, findData);
+            object IEnumerator.Current => new FastFileInfoV2(CurrentFolder, FindData);
 
             public bool MoveNext()
             {
                 while (true)
                 {
-                    isCurrent = FindNextFile(hndFile, findData);
-
-                    while (findData.dwFileAttributes.HasFlag(FileAttributes.Directory) && isCurrent)
+                    if (StepToNext) IsCurrent = FindNextFile(HndFile, FindData);
+                    StepToNext = true;
+                    if (!IsCurrent)
                     {
-                        var cFilename = findData.cFileName;
-                        if (cFilename is not "." and not "..")
-                        {
-                            queue.Enqueue(Path.Combine(currentFolder, cFilename));
-                            if (searchScope == 1) return true;
-                        }
-                        isCurrent = FindNextFile(hndFile, findData);
-                    }
-
-                    if (isCurrent)
-                    {
-                        if (searchScope == 0) return true;
+                        if (FolderStack.Count == 0) return false;
+                        InitFolder(FolderStack.Pop());
                         continue;
                     }
-
-                    if (queue.Count == 0) return false;
-
-                    // Initialize the next folder for processing
-                    InitFolder(queue.Dequeue());
+                    if (FindData.cFileName is "." or "..") continue;
+                    if (FindData.dwFileAttributes.HasFlag(FileAttributes.Directory))
+                    {
+                        FolderStack.Push(Path.Combine(CurrentFolder, FindData.cFileName));
+                        if (SearchScope is 1 or 2) return true;
+                        continue;
+                    }
+                    if (SearchScope is 0 or 2) return true;
                 }
             }
 
             private void InitFolder(string folder)
             {
-                hndFile?.Dispose();
-                string searchPath = Path.Combine(folder, searchFilter);
-                if (useEx)
-                    hndFile = FindFirstFileEx(searchPath, infoLevel, findData, 1, null, additionalFlags);
+                CurrentFolder = folder;
+                HndFile?.Dispose();
+                string searchPath = Path.Combine(folder, SearchFilter);
+                if (UseEx)
+                    HndFile = FindFirstFileEx(searchPath, InfoLevel, FindData, 1, null, AdditionalFlags); // 0 = files, 1 = limit to directories(files and directories)
                 else
-                    hndFile = FindFirstFile(searchPath, findData);
-                currentFolder = folder;
-                isCurrent = !hndFile.IsInvalid; // e.g. unaccessible C:\System Volume Information or filter like *.txt in a directory with no text files
+                    HndFile = FindFirstFile(searchPath, FindData);
+                IsCurrent = !HndFile.IsInvalid; // e.g. unaccessible C:\System Volume Information or filter like *.txt in a directory with no text files
             }
 
             public void Reset()
             {
-                isCurrent = false;
-                currentFolder = initialFolder;
-                findData = new WIN32_FIND_DATA();
-                queue = new Queue<string>();
-                InitFolder(initialFolder);
+                IsCurrent = false;
+                CurrentFolder = InitialFolder;
+                FindData = new WIN32_FIND_DATA();
+                FolderStack = new Stack<string>();
+                InitFolder(InitialFolder);
             }
         }
 
@@ -224,11 +218,12 @@ namespace FastFileV2
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
         public string cAlternateFileName;
 
-        public override string ToString() => "File name=" + cFileName;
+        public override string ToString() => "FileName = " + cFileName;
     }
-
-    public interface IFolderFilter
+    public enum SearchFor
     {
-        bool SearchFolder(FastFileInfoV2 folder);
+        Files = 0,
+        Directories = 1,
+        FilesAndDirectories = 2,
     }
 }
