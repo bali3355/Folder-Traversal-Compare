@@ -115,9 +115,14 @@ namespace FastDirTest
 
             return [.. cmdOutput.Split("\n", StringSplitOptions.RemoveEmptyEntries)];
         }
+        /// <summary>
+        /// Based on https://stackoverflow.com/a/2107294
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
         public static IEnumerable<string> V1GetFiles(string path)
         {
-            //https://stackoverflow.com/questions/2106877/is-there-a-faster-way-than-this-to-find-all-the-files-in-a-directory-and-all-sub
+
             ConcurrentQueue<string> pendingQueue = [];
             ConcurrentBag<string> filesNames = [];
             pendingQueue.Enqueue(path);
@@ -137,6 +142,12 @@ namespace FastDirTest
             }
             return filesNames;
         }
+
+        /// <summary>
+        /// Other solution with bags using Enumerate Files/Directories
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
         public static IEnumerable<string> V2GetFiles(string path)
         {
             var filesBag = new ConcurrentBag<string>();
@@ -150,14 +161,46 @@ namespace FastDirTest
                 //Parallel.ForEach(dirs, filesBag.Add);
                 Parallel.ForEach(dirs, dir =>
                 {
-                    try { Parallel.ForEach(V2GetFiles(dir), filesBag.Add); }
-                    catch { return; }
+                    Parallel.ForEach(V2GetFiles(dir), filesBag.Add);
                 });
             }
             catch
             { return []; }
 
             return filesBag;
+        }
+
+        /// <summary>
+        /// https://stackoverflow.com/a/59288137
+        /// </summary>
+        /// <param name="path"></param>
+        /// <returns></returns>
+        public static IEnumerable<string> V3GetFiles(string path)
+        {
+            ConcurrentQueue<string> pendingQueue = [];
+            pendingQueue.Enqueue(path);
+
+            ConcurrentBag<string> filesNames = [];
+            while (!pendingQueue.IsEmpty)
+            {
+                try
+                {
+                    pendingQueue.TryDequeue(out path);
+
+                    var files = Directory.GetFiles(path);
+
+                    Parallel.ForEach(files, filesNames.Add);
+
+                    var directories = Directory.GetDirectories(path);
+
+                    Parallel.ForEach(directories, pendingQueue.Enqueue);
+                }
+                catch (Exception)
+                {
+                    continue;
+                }
+            }
+            return filesNames;
         }
     }
 }

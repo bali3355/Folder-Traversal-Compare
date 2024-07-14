@@ -8,7 +8,7 @@ namespace FastFileV3
     ///  Based on this code:
     ///  <see href="https://web.archive.org/web/20130426032447/http://codepaste.net/msm8b1"/>
     /// </summary>
-    internal class FastFileInfoV3
+    internal class WinAPIv3
     {
         #region Import from kernel32
 
@@ -120,8 +120,20 @@ namespace FastFileV3
             }
             return allFiles;
         }
-
         public static ConcurrentBag<string> GetAllFilesV3(string path)
+        {
+            var allFiles = new ConcurrentBag<string>();
+            var queue = new ConcurrentStack<string>([path]);
+
+            while (queue.TryPop(out var currentPath))
+            {
+                foreach (var subDir in GetDirectories(currentPath, "*")) queue.Push(subDir);
+                foreach (var subFile in GetFiles(currentPath, "*")) allFiles.Add(subFile);
+            }
+            return allFiles;
+        }
+
+        public static ConcurrentBag<string> GetAllFilesV4(string path)
         {
             var allFiles = new ConcurrentBag<string>();
             var subFiles = GetFiles(path, "*");
@@ -131,7 +143,7 @@ namespace FastFileV3
             }
             foreach (var subDir in GetDirectories(path, "*"))
             {
-                foreach (var subFile in GetAllFilesV3(Path.Combine(path, subDir)))
+                foreach (var subFile in GetAllFilesV4(Path.Combine(path, subDir)))
                 { allFiles.Add(subFile); }
             }
             return allFiles;

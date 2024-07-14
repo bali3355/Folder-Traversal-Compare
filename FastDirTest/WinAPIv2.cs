@@ -12,7 +12,7 @@ namespace FastFileV2
     /// Based on Opulus FastFileInfo <see cref="FastFile.FastFileInfo"/>
     /// </summary>
     [Serializable]
-    public class FastFileInfoV2
+    public class WinAPIv2
     {
         public readonly long Length;
         public readonly string Name;
@@ -22,9 +22,9 @@ namespace FastFileV2
         public string? DirectoryName => Path.GetDirectoryName(FullName);
         public bool Exists => File.Exists(FullName);
         public override string ToString() => FullName;
-        public FastFileInfoV2(string filename) : this(new FileInfo(filename)) { }
+        public WinAPIv2(string filename) : this(new FileInfo(filename)) { }
 
-        public FastFileInfoV2(FileInfo file)
+        public WinAPIv2(FileInfo file)
         {
             Name = file.Name;
             FullName = file.FullName;
@@ -34,7 +34,7 @@ namespace FastFileV2
                 Attributes = file.Attributes;
             }
         }
-        internal FastFileInfoV2(string dir, WIN32_FIND_DATA findData)
+        internal WinAPIv2(string dir, WIN32_FIND_DATA findData)
         {
             Attributes = findData.dwFileAttributes;
             Length = CombineHighLowInts(findData.nFileSizeHigh, findData.nFileSizeLow);
@@ -42,20 +42,20 @@ namespace FastFileV2
             AlternateName = findData.cAlternateFileName;
             FullName = Path.Combine(dir, findData.cFileName);
         }
-        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path) => EnumerateDirectories(path, "*");
-        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly);
-        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Directories);
-        public static IEnumerable<FastFileInfoV2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
+        public static IEnumerable<WinAPIv2> EnumerateDirectories(string path) => EnumerateDirectories(path, "*");
+        public static IEnumerable<WinAPIv2> EnumerateDirectories(string path, string searchPattern) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly);
+        public static IEnumerable<WinAPIv2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Directories);
+        public static IEnumerable<WinAPIv2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
         {
             ExceptionHandle(path, searchPattern, searchOption);
             return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, searchFor);
         }
 
-        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path) => EnumerateFiles(path, "*");
-        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly);
-        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Files);
+        public static IEnumerable<WinAPIv2> EnumerateFiles(string path) => EnumerateFiles(path, "*");
+        public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly);
+        public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Files);
 
-        public static IEnumerable<FastFileInfoV2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
+        public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
         {
             ExceptionHandle(path, searchPattern, searchOption);
             return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, searchFor);
@@ -69,9 +69,9 @@ namespace FastFileV2
                 throw new ArgumentOutOfRangeException(nameof(searchOption));
         }
 
-        private class FileEnumerable(string path, string filter, SearchOption searchOption, SearchFor searchFor) : IEnumerable<FastFileInfoV2>
+        private class FileEnumerable(string path, string filter, SearchOption searchOption, SearchFor searchFor) : IEnumerable<WinAPIv2>
         {
-            public IEnumerator<FastFileInfoV2> GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
+            public IEnumerator<WinAPIv2> GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
             IEnumerator IEnumerable.GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
         }
 
@@ -92,7 +92,7 @@ namespace FastFileV2
         }
 
         [System.Security.SuppressUnmanagedCodeSecurity]
-        public class FileEnumerator : IEnumerator<FastFileInfoV2>
+        public class FileEnumerator : IEnumerator<WinAPIv2>
         {
             [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
             private static extern SafeFindHandle FindFirstFile(string fileName, [In, Out] WIN32_FIND_DATA data);
@@ -137,7 +137,7 @@ namespace FastFileV2
                 Reset();
             }
 
-            public FastFileInfoV2 Current => new(CurrentFolder, FindData);
+            public WinAPIv2 Current => new(CurrentFolder, FindData);
 
             public void Dispose()
             {
@@ -146,7 +146,7 @@ namespace FastFileV2
                 GC.SuppressFinalize(this);
             }
 
-            object IEnumerator.Current => new FastFileInfoV2(CurrentFolder, FindData);
+            object IEnumerator.Current => new WinAPIv2(CurrentFolder, FindData);
 
             public bool MoveNext()
             {

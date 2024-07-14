@@ -26,30 +26,36 @@ namespace FastDirTest
 
         private static void Main(string[] args)
         {
-            Console.WriteLine("Hello, World!\n");
+            Console.WriteLine($"Hello, World! {SearchPath}\n");
             string header = $"| {"Enumerator name",-nameWidth} | {"Enumerating Time",-timeWidth} | {"Enumerated Count",-countWidth} |";
             Console.WriteLine(header);
             Console.WriteLine(new string('-', header.Length));
 
+            //stopwatch.Start();
+            //TestEnumeratingFiles(FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null), "FastFileInfo");
+            ////.Select(item => item.FullName /*+ "|" + item.Attributes*/).ToList();
+
+            //stopwatch.Start();
+            //TestEnumeratingFiles(FastFileInfo.GetFiles(SearchPath, "*", SearchOption.AllDirectories), "FastFileInfoGetFiles");
+
             stopwatch.Start();
-            TestEnumeratingFiles(FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null), "FastFileInfo");
+            TestEnumeratingFiles(WinAPI.GetFiles(SearchPath), "WinAPI");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(WinAPIv2.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, SearchFor.Files), "WinAPIv2");
             //.Select(item => item.FullName /*+ "|" + item.Attributes*/).ToList();
 
             stopwatch.Start();
-            TestEnumeratingFiles(FastFileInfo.GetFiles(SearchPath, "*", SearchOption.AllDirectories), "FastFileInfoGetFiles");
+            TestEnumeratingFiles(WinAPIv3.GetAllFiles(SearchPath, -1, SearchPath.Split('\\').Length), "WinAPIv3.GetAllFiles");
 
             stopwatch.Start();
-            TestEnumeratingFiles(FastFileInfoV2.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, SearchFor.Files), "FastFileInfoV2");
-            //.Select(item => item.FullName /*+ "|" + item.Attributes*/).ToList();
+            TestEnumeratingFiles(WinAPIv3.GetAllFilesV2(SearchPath), "WinAPIv3.GetAllFilesV2");
 
             stopwatch.Start();
-            TestEnumeratingFiles(FastFileInfoV3.GetAllFiles(SearchPath, -1, SearchPath.Split('\\').Length), "FastFileInfoV3.GetAllFiles");
+            TestEnumeratingFiles(WinAPIv3.GetAllFilesV3(SearchPath), "WinAPIv3.GetAllFilesV3");
 
             stopwatch.Start();
-            TestEnumeratingFiles(FastFileInfoV3.GetAllFilesV2(SearchPath), "FastFileInfoV3.GetAllFilesV2");
-
-            stopwatch.Start();
-            TestEnumeratingFiles(FastFileInfoV3.GetAllFilesV3(SearchPath), "FastFileInfoV3.GetAllFilesV3");
+            TestEnumeratingFiles(WinAPIv3.GetAllFilesV4(SearchPath), "WinAPIv3.GetAllFilesV4");
 
             stopwatch.Start();
             TestEnumeratingFiles(OtherGetFiles.V1GetFiles(SearchPath), "V1GetFiles");
