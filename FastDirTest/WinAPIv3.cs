@@ -1,4 +1,6 @@
-﻿using System.Collections.Concurrent;
+﻿using Microsoft.Win32.SafeHandles;
+using System.Collections.Concurrent;
+using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 
@@ -34,8 +36,6 @@ namespace FastFileV3
         #endregion Import from kernel32
 
         private const int MAX_PATH = 260;
-        private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
-
         public static IEnumerable<string> GetDirectories(string path, string searchPattern) => GetInternal(path, searchPattern, true);
         public static IEnumerable<string> GetFiles(string path, string searchPattern) => GetInternal(path, searchPattern, false);
 
@@ -43,33 +43,28 @@ namespace FastFileV3
         private static extern bool FindClose(IntPtr hFindFile);
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern IntPtr FindFirstFileW(string lpFileName,
+        private static extern SafeFindHandle FindFirstFileW(string lpFileName,
                                                    out WIN32_FIND_DATA lpFindFileData);
 
         [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern bool FindNextFileW(IntPtr hFindFile,
+        private static extern bool FindNextFileW(SafeFindHandle hFindFile,
                                                 out WIN32_FIND_DATA lpFindFileData);
+
+        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
+        {
+            public SafeFindHandle() : base(true) { }
+            protected override bool ReleaseHandle() => FindClose(handle);
+        }
 
         private static IEnumerable<string> GetInternal(string path, string searchPattern, bool isGetDirs)
         {
-            var findHandle = FindFirstFileW(Path.Combine(path, searchPattern), out WIN32_FIND_DATA findData);
-
-            if (findHandle == INVALID_HANDLE_VALUE) yield break;
-            try
+            using var findHandle = FindFirstFileW(Path.Combine(path, searchPattern), out WIN32_FIND_DATA findData);
+            if (findHandle.IsInvalid) yield break;
+            do
             {
-                do
-                {
-                    if (findData.cFileName == "." || findData.cFileName == ".." || findData.cFileName == "thumbs.db") continue;
-                    if (isGetDirs
-                            ? (findData.dwFileAttributes & FileAttributes.Directory) != 0
-                            : (findData.dwFileAttributes & FileAttributes.Directory) == 0)
-                        yield return Path.Combine(path, findData.cFileName);
-                } while (FindNextFileW(findHandle, out findData));
-            }
-            finally
-            {
-                FindClose(findHandle);
-            }
+                if (findData.cFileName is "." or ".." or "thumbs.db") continue;
+                if (isGetDirs == ((findData.dwFileAttributes & FileAttributes.Directory) != 0)) yield return Path.Combine(path, findData.cFileName);
+            } while (FindNextFileW(findHandle, out findData));
         }
 
         public static ConcurrentBag<string> GetAllDirectories(string path, int deepness, int rootLength)

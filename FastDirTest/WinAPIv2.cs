@@ -92,8 +92,34 @@ namespace FastFileV2
         }
 
         [System.Security.SuppressUnmanagedCodeSecurity]
-        public class FileEnumerator : IEnumerator<WinAPIv2>
+        public class FileEnumerator : IEnumerator<WinAPIv2>, IDisposable
         {
+            public void Dispose()
+            {
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
+
+            private bool _disposed = false;
+
+            protected virtual void Dispose(bool disposing)
+            {
+                if (!_disposed)
+                {
+                    if (disposing)
+                    {
+                        HndFile?.Dispose();
+                    }
+                    HndFile = null;
+                    _disposed = true;
+                }
+            }
+
+            ~FileEnumerator()
+            {
+                Dispose(false);
+            }
+
             [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
             private static extern SafeFindHandle FindFirstFile(string fileName, [In, Out] WIN32_FIND_DATA data);
 
@@ -139,12 +165,7 @@ namespace FastFileV2
 
             public WinAPIv2 Current => new(CurrentFolder, FindData);
 
-            public void Dispose()
-            {
-                HndFile?.Dispose();
-                HndFile = null;
-                GC.SuppressFinalize(this);
-            }
+
 
             object IEnumerator.Current => new WinAPIv2(CurrentFolder, FindData);
 
@@ -160,7 +181,7 @@ namespace FastFileV2
                         InitFolder(FolderStack.Pop());
                         continue;
                     }
-                    if (FindData.cFileName is "." or "..") continue;
+                    if (FindData.cFileName.Equals(".", StringComparison.Ordinal) || FindData.cFileName.Equals("..", StringComparison.Ordinal)) continue;
                     if (FindData.dwFileAttributes.HasFlag(FileAttributes.Directory))
                     {
                         FolderStack.Push(Path.Combine(CurrentFolder, FindData.cFileName));
