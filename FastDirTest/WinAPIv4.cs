@@ -8,17 +8,21 @@ using System.Security.Permissions;
 
 namespace FastFileV4
 {
+    public enum SearchFor
+    {
+        Files = 0,
+        Directories = 1,
+        FilesAndDirectories = 2,
+    }
+
     [Serializable]
     public class WinAPIv4
     {
+        public readonly string AlternateName;
+        public readonly FileAttributes Attributes;
+        public readonly string FullName;
         public readonly long Length;
         public readonly string Name;
-        public readonly string AlternateName;
-        public readonly string FullName;
-        public readonly FileAttributes Attributes;
-        public string? DirectoryName => Path.GetDirectoryName(FullName);
-        public bool Exists => File.Exists(FullName);
-        public override string ToString() => FullName;
         public WinAPIv4(string filename) : this(new FileInfo(filename)) { }
 
         public WinAPIv4(FileInfo file)
@@ -31,6 +35,7 @@ namespace FastFileV4
                 Attributes = file.Attributes;
             }
         }
+
         internal WinAPIv4(string dir, WIN32_FIND_DATA findData)
         {
             Attributes = findData.dwFileAttributes;
@@ -40,11 +45,16 @@ namespace FastFileV4
             FullName = Path.Combine(dir, findData.cFileName);
         }
 
+        public string? DirectoryName => Path.GetDirectoryName(FullName);
+        public bool Exists => File.Exists(FullName);
         public static long CombineHighLowInts(uint high, uint low) => (((long)high) << 0x20) | low;
 
         public static IEnumerable<WinAPIv4> EnumerateDirectories(string path) => EnumerateDirectories(path, "*");
+
         public static IEnumerable<WinAPIv4> EnumerateDirectories(string path, string searchPattern) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly);
+
         public static IEnumerable<WinAPIv4> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Directories);
+
         public static IEnumerable<WinAPIv4> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
         {
             ExceptionHandle(path, searchPattern, searchOption);
@@ -52,7 +62,9 @@ namespace FastFileV4
         }
 
         public static IEnumerable<WinAPIv4> EnumerateFiles(string path) => EnumerateFiles(path, "*");
+
         public static IEnumerable<WinAPIv4> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly);
+
         public static IEnumerable<WinAPIv4> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Files);
 
         public static IEnumerable<WinAPIv4> EnumerateFiles(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
@@ -61,6 +73,7 @@ namespace FastFileV4
             return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, searchFor);
         }
 
+        public override string ToString() => FullName;
         private static void ExceptionHandle(string path, string searchPattern, SearchOption searchOption)
         {
             ArgumentNullException.ThrowIfNull(path);
@@ -73,12 +86,11 @@ namespace FastFileV4
 
         public class FileEnumerable : IEnumerable<WinAPIv4>
         {
-            private readonly string _path;
             private readonly string _filter;
-            private readonly SearchOption _searchOption;
-            private readonly SearchFor _searchFor;
             private readonly int _maxDegreeOfParallelism;
-
+            private readonly string _path;
+            private readonly SearchFor _searchFor;
+            private readonly SearchOption _searchOption;
             public FileEnumerable(string path, string filter, SearchOption searchOption, SearchFor searchFor, int maxDegreeOfParallelism = -1)
             {
                 _path = path;
@@ -96,48 +108,22 @@ namespace FastFileV4
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
-        // Wraps a FindFirstFile handle.
-        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
-        {
-            [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]
-            [DllImport("kernel32.dll")]
-            private static extern bool FindClose(IntPtr handle);
-
-            [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
-            internal SafeFindHandle() : base(true) { }
-
-            protected override bool ReleaseHandle()
-            {
-                return FindClose(handle);
-            }
-        }
         [System.Security.SuppressUnmanagedCodeSecurity]
         public class ParallelFileEnumerator : IEnumerator<WinAPIv4>
         {
-
-            private readonly string _initialPath;
-            private readonly string _searchPattern;
-            private readonly SearchOption _searchOption;
-            private readonly SearchFor _searchFor;
-            private readonly int _maxDegreeOfParallelism;
-            private readonly ConcurrentQueue<string> _directoryQueue;
-            private readonly BlockingCollection<WinAPIv4> _resultQueue;
-            private readonly CancellationTokenSource _cts;
-            private int _activeProducers;
-            private readonly Queue<WinAPIv4> _localQueue = new Queue<WinAPIv4>();
             private readonly ManualResetEventSlim _completionEvent = new(false);
+            private readonly CancellationTokenSource _cts;
+            private readonly ConcurrentQueue<string> _directoryQueue;
+            private readonly string _initialPath;
+            private readonly int _maxDegreeOfParallelism;
             private readonly ConcurrentDictionary<string, byte> _processedDirectories = [];
+            private readonly BlockingCollection<WinAPIv4> _resultQueue;
+            private readonly SearchFor _searchFor;
+            private readonly SearchOption _searchOption;
+            private readonly string _searchPattern;
             private readonly AutoResetEvent _workAvailable = new(false);
-            private bool _enumeRATEurRunning = true;
-
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-            private static extern SafeFindHandle FindFirstFile(string fileName, [In, Out] WIN32_FIND_DATA data);
-
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-            private static extern bool FindNextFile(SafeFindHandle hndFindFile, [In, Out, MarshalAs(UnmanagedType.LPStruct)] WIN32_FIND_DATA lpFindFileData);
-
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-            private static extern SafeFindHandle FindFirstFileEx(string fileName, int infoLevel, [In, Out] WIN32_FIND_DATA data, int searchScope, string notUsedNull, int additionalFlags);
+            private int _activeProducers;
+            private bool _enumerateRunning = true;
 
             public ParallelFileEnumerator(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor, int maxDegreeOfParallelism)
             {
@@ -146,8 +132,8 @@ namespace FastFileV4
                 _searchOption = searchOption;
                 _searchFor = searchFor;
                 _maxDegreeOfParallelism = maxDegreeOfParallelism > 0 ? maxDegreeOfParallelism : Environment.ProcessorCount;
-                _directoryQueue = new ConcurrentQueue<string>();
-                _resultQueue = new BlockingCollection<WinAPIv4>();
+                _directoryQueue = [];
+                _resultQueue = [];
                 _cts = new CancellationTokenSource();
                 _activeProducers = _maxDegreeOfParallelism;
 
@@ -155,11 +141,88 @@ namespace FastFileV4
                 StartProducerTasks();
             }
 
-            private void StartProducerTasks()
+            public WinAPIv4 Current { get; private set; }
+
+            object IEnumerator.Current => Current;
+
+            public void Dispose()
             {
-                for (int i = 0; i < _maxDegreeOfParallelism; i++)
+                _cts.Cancel();
+                _enumerateRunning = false;
+                _workAvailable.Set(); // Wake up any waiting threads
+                _completionEvent.Wait(TimeSpan.FromSeconds(30)); // Wait for all producers to complete
+                _resultQueue.Dispose();
+                _cts.Dispose();
+                _completionEvent.Dispose();
+                _workAvailable.Dispose();
+            }
+
+            public bool MoveNext()
+            {
+                while (_enumerateRunning || _resultQueue.Count > 0)
                 {
-                    Task.Factory.StartNew(ProducerWork, _cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                    if (_resultQueue.TryTake(out var item, 1000, _cts.Token))
+                    {
+                        Current = item;
+                        return true;
+                    }
+
+                    if (_directoryQueue.IsEmpty) _enumerateRunning = false;
+                    
+                }
+                return false;
+            }
+
+            public void Reset() => throw new NotSupportedException();
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+            private static extern SafeFindHandle FindFirstFile(string fileName, [In, Out] WIN32_FIND_DATA data);
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+            private static extern SafeFindHandle FindFirstFileEx(string fileName, int infoLevel, [In, Out] WIN32_FIND_DATA data, int searchScope, string notUsedNull, int additionalFlags);
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+            private static extern bool FindNextFile(SafeFindHandle hndFindFile, [In, Out, MarshalAs(UnmanagedType.LPStruct)] WIN32_FIND_DATA lpFindFileData);
+            private void ProcessDirectory(string path)
+            {
+                if (!_processedDirectories.TryAdd(path, 1)) return; // Skip if already processed
+                var searchPattern = _searchFor == SearchFor.Directories ? "*." : _searchPattern;
+                try
+                {
+                    var findData = new WIN32_FIND_DATA();
+                    using var hFind = FindFirstFile(Path.Combine(path, searchPattern), findData);
+
+                    if (hFind.IsInvalid) return;
+
+                    do
+                    {
+                        if (_cts.IsCancellationRequested) return;
+
+                        if (findData.cFileName is "." or "..") continue;
+
+                        var fullPath = Path.Combine(path, findData.cFileName);
+
+                        if (findData.dwFileAttributes.HasFlag(FileAttributes.Directory))
+                        {
+                            if (_searchOption == SearchOption.AllDirectories)
+                            {
+                                _directoryQueue.Enqueue(fullPath);
+                                _workAvailable.Set(); // Signal that work is available
+                            }
+
+                            if (_searchFor != SearchFor.Files)
+                                _resultQueue.Add(new WinAPIv4(path, findData));
+                        }
+                        else if (_searchFor != SearchFor.Directories)
+                        {
+                            _resultQueue.Add(new WinAPIv4(path, findData));
+                        }
+                    }
+                    while (FindNextFile(hFind, findData));
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error processing directory {path}: {ex.Message}");
                 }
             }
 
@@ -167,7 +230,7 @@ namespace FastFileV4
             {
                 try
                 {
-                    while (!_cts.IsCancellationRequested && _enumeRATEurRunning)
+                    while (!_cts.IsCancellationRequested && _enumerateRunning)
                     {
                         if (_directoryQueue.TryDequeue(out string currentPath))
                         {
@@ -189,91 +252,30 @@ namespace FastFileV4
                 }
             }
 
-            private void ProcessDirectory(string path)
+            private void StartProducerTasks()
             {
-                if (!_processedDirectories.TryAdd(path, 1)) return; // Skip if already processed
-
-                try
+                for (int i = 0; i < _maxDegreeOfParallelism; i++)
                 {
-                    var findData = new WIN32_FIND_DATA();
-                    using var hFind = FindFirstFile(Path.Combine(path, _searchPattern), findData);
-
-                    if (hFind.IsInvalid)
-                        return;
-
-                    do
-                    {
-                        if (_cts.IsCancellationRequested) return;
-
-                        if (findData.cFileName is "." or "..") continue;
-
-                        var fullPath = Path.Combine(path, findData.cFileName);
-
-                        if (findData.dwFileAttributes.HasFlag(FileAttributes.Directory))
-                        {
-                            if (_searchOption == SearchOption.AllDirectories)
-                            {
-                                _directoryQueue.Enqueue(fullPath);
-                                _workAvailable.Set(); // Signal that work is available
-                            }
-
-                            if (_searchFor is SearchFor.Directories or SearchFor.FilesAndDirectories)
-                                _resultQueue.Add(new WinAPIv4(path, findData));
-                        }
-                        else if (_searchFor is SearchFor.Files or SearchFor.FilesAndDirectories)
-                        {
-                            _resultQueue.Add(new WinAPIv4(path, findData));
-                        }
-                    }
-                    while (FindNextFile(hFind, findData));
+                    Task.Factory.StartNew(ProducerWork, _cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
                 }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"Error processing directory {path}: {ex.Message}");
-                }
-            }
-
-            public bool MoveNext()
-            {
-                while (_enumeRATEurRunning || _resultQueue.Count > 0)
-                {
-                    if (_resultQueue.TryTake(out var item, 100, _cts.Token))
-                    {
-                        Current = item;
-                        return true;
-                    }
-
-                    if (_directoryQueue.IsEmpty)
-                    {
-                        _enumeRATEurRunning = false;
-                    }
-                }
-                return false;
-            }
-
-            public void Dispose()
-            {
-                _cts.Cancel();
-                _enumeRATEurRunning = false;
-                _workAvailable.Set(); // Wake up any waiting threads
-                _completionEvent.Wait(TimeSpan.FromSeconds(30)); // Wait for all producers to complete
-                _resultQueue.Dispose();
-                _cts.Dispose();
-                _completionEvent.Dispose();
-                _workAvailable.Dispose();
-            }
-
-            public WinAPIv4 Current { get; private set; }
-
-            object IEnumerator.Current => Current;
-
-            public void Reset()
-            {
-                throw new NotSupportedException();
             }
         }
 
+        // Wraps a FindFirstFile handle.
+        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
+        {
+            [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
+            internal SafeFindHandle() : base(true) { }
 
+            protected override bool ReleaseHandle()
+            {
+                return FindClose(handle);
+            }
+
+            [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]
+            [DllImport("kernel32.dll")]
+            private static extern bool FindClose(IntPtr handle);
+        }
     }
 
     /// <summary>
@@ -299,11 +301,5 @@ namespace FastFileV4
         public string cAlternateFileName;
 
         public override string ToString() => "FileName = " + cFileName;
-    }
-    public enum SearchFor
-    {
-        Files = 0,
-        Directories = 1,
-        FilesAndDirectories = 2,
     }
 }
