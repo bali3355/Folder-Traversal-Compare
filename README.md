@@ -1,15 +1,14 @@
-# Compare folder traversal solutions
-This repo is tried to make comparing between folder traversal with different solutions and comparing them with time and their count. Usually they also contains search for directories too.
 
-Used solutions:
-- **WINAPI32**
-- **Directory.EnumerateFiles**
-- **Directory.GetFiles**
-- **CMD**
-- **Powershell**
+# Get Files Comparsion
 
-These algorithms are able to go through AccessDenied problems, that EnumerateFiles has.
+This comparison of solutions shows which is the fastest way to get files - or directories, if necessary - for later processing.
 
-![image](https://github.com/bali3355/Enumerator-Comparing/assets/12228795/2cfcf52f-38de-434a-aaad-4226920643b0)
+![image](https://github.com/user-attachments/assets/b170e2d2-adf9-4adc-85e7-501542e2bace)
+*(This run is done once, and based on my 'C' drive without any admin rights)*.
+___
 
-#### *Use them as you like, while give it a star!*
+I have made the custom searches react to `AccessDenied` errors, so they are safe to use for exploring. The classes use **`C# NET. 8.0`**, be aware if you need them in `NET.Core`.
+
+You can check them out or test them on your computer and use them as you like!
+
+Happy if it helps! :)
