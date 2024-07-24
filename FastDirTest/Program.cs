@@ -3,6 +3,7 @@ using FastFileV2;
 using FastFileV3;
 using FastFileV4;
 using FastFileV5;
+using FastFileInfo;
 using System.Diagnostics;
 
 namespace FastDirTest
@@ -15,7 +16,6 @@ namespace FastDirTest
             TimeSpan time = stopwatch.Elapsed;
             stopwatch.Reset();
             return time;
-
         }
     }
     internal class Program
@@ -31,52 +31,50 @@ namespace FastDirTest
             Console.WriteLine($"Hello, World! {SearchPath}\n");
             string header = $"| {"Enumerator name",-nameWidth} | {"Enumerating Time",-timeWidth} | {"Enumerated Count",-countWidth} |";
             Console.WriteLine(header);
-            Console.WriteLine(new string('-', header.Length));
+            var line = "|" + new string('-', header.Length - 2) + "|";
+            Console.WriteLine(line);
 
             stopwatch.Start();
-            TestEnumeratingFiles(OtherGetFiles.GetAllFilesWithCMD(SearchPath), "GetAllFilesWithCMD").ToList();
+            TestEnumeratingFiles(FastFileInfo.FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null), "FastFileInfo enumerator");
 
             stopwatch.Start();
-            TestEnumeratingFiles(OtherGetFiles.GetAllFilesWithPowerShell(SearchPath), "GetAllFilesWithPowerShell");
+            TestEnumeratingFiles(WinAPI.GetFiles(SearchPath), "1. Gen WinAPI use");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv2.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, FastFileV2.SearchFor.Files), "WinAPIv2");
+            TestEnumeratingFiles(WinAPIv2.EnumerateFiles(SearchPath), "2. Gen WinAPI use");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetAllFilesV4(SearchPath), "WinAPIv3 Separated Recursive");
+            TestEnumeratingFiles(WinAPIv3.GetFiles(SearchPath, -1, SearchPath.Length), "3. Gen WinAPI use, parallel recursive search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetAllFiles(SearchPath, -1, SearchPath.Split('\\').Length), "WinAPIv3 Separated Parallel Recursive");
+            TestEnumeratingFiles(WinAPIv3.GetFilesv2(SearchPath), "3. Gen WinAPI use, queued search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetAllFilesV2(SearchPath), "WinAPIv3 Separated Parallel Queue");
+            TestEnumeratingFiles(WinAPIv3.GetFilesv3(SearchPath), "3. Gen WinAPI use, stacked search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetAllFilesV3(SearchPath), "WinAPIv3 Separated Parallel Stack");
+            TestEnumeratingFiles(WinAPIv3.GetFilesv4(SearchPath), "3. Gen WinAPI use, recursive foreach search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null), "FastFileInfo by Opulus");
-            //.Select(item => item.FullName /*+ "|" + item.Attributes*/).ToList();
+            TestEnumeratingFiles(WinAPIv4.EnumerateFiles(SearchPath,"*", SearchOption.AllDirectories, FastFileV4.SearchFor.Files), "4. Gen WinAPI use, paralleled Enumerate");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv4.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, FastFileV4.SearchFor.Files), "Improved Custom FastFileInfo with Parallel");
+            TestEnumeratingFiles(WinAPIv5.EnumerateFileSystem(SearchPath), "5. Gen WinAPI use, improved paralleled enumerate");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv5.EnumerateFileSystem(SearchPath, "*", SearchOption.AllDirectories, FastFileV5.SearchFor.Files), "Improved Custom FastFileInfo with Custom Objects");
+            TestEnumeratingFiles(OtherGetFiles.V1GetFiles(SearchPath), "Built-in 'Get Files/Dirs' with queue");
 
             stopwatch.Start();
-            TestEnumeratingFiles(OtherGetFiles.V1GetFiles(SearchPath), "GetFiles from StackOverFlow");
+            TestEnumeratingFiles(OtherGetFiles.V2GetFiles(SearchPath), "Recursive built-in 'Enumerate Files/Dirs'");
 
             stopwatch.Start();
-            TestEnumeratingFiles(OtherGetFiles.V2GetFiles(SearchPath), "GetFilesv2");
+            TestEnumeratingFiles(OtherGetFiles.GetAllFilesWithCMD(SearchPath), "Exploring with built-in 'Dir' command with cmd");
 
+            stopwatch.Start();
+            TestEnumeratingFiles(OtherGetFiles.GetAllFilesWithPowerShell(SearchPath), "Powershell folder exploring");
 
-
-            Console.WriteLine(new string('-', header.Length));
+            Console.WriteLine(line);
             Console.WriteLine("\n\nPress any key to exit...");
-            //Console.ReadKey();
-            //var compare = lista.Except(listb).ToList();
-            //foreach (var item in compare) Console.WriteLine(item);
             Console.ReadKey();
         }
 

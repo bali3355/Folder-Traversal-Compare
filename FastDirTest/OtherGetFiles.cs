@@ -5,7 +5,14 @@ namespace FastDirTest
 {
     internal static class OtherGetFiles
     {
+        #region Internal Properties
+
         internal static string[] Separator { get; } = ["\r\n"];
+
+        #endregion Internal Properties
+
+        #region Public Methods
+
         public static IEnumerable<string> GetAllDirectoriesWithCMD(string searchPath)
         {
             using var process = new Process
@@ -170,37 +177,6 @@ namespace FastDirTest
             return filesBag;
         }
 
-        /// <summary>
-        /// https://stackoverflow.com/a/59288137
-        /// </summary>
-        /// <param name="path"></param>
-        /// <returns></returns>
-        public static IEnumerable<string> V3GetFiles(string path)
-        {
-            ConcurrentQueue<string> pendingQueue = [];
-            pendingQueue.Enqueue(path);
-
-            ConcurrentBag<string> filesNames = [];
-            while (!pendingQueue.IsEmpty)
-            {
-                try
-                {
-                    pendingQueue.TryDequeue(out path);
-
-                    var files = Directory.GetFiles(path);
-
-                    Parallel.ForEach(files, filesNames.Add);
-
-                    var directories = Directory.GetDirectories(path);
-
-                    Parallel.ForEach(directories, pendingQueue.Enqueue);
-                }
-                catch (Exception)
-                {
-                    continue;
-                }
-            }
-            return filesNames;
-        }
+        #endregion Public Methods
     }
 }

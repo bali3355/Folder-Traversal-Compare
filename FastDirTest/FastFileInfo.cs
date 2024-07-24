@@ -4,7 +4,7 @@ using System.Security.Permissions;
 using System.Collections;
 using Microsoft.Win32.SafeHandles;
 
-namespace FastFile
+namespace FastFileInfo
 {
 
     /// <summary>

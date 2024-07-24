@@ -36,38 +36,7 @@ namespace FastFileV3
         #endregion Import from kernel32
 
         private const int MAX_PATH = 260;
-        public static IEnumerable<string> GetDirectories(string path, string searchPattern) => GetInternal(path, searchPattern, true);
-        public static IEnumerable<string> GetFiles(string path, string searchPattern) => GetInternal(path, searchPattern, false);
-
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern bool FindClose(IntPtr hFindFile);
-
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern SafeFindHandle FindFirstFileW(string lpFileName,
-                                                   out WIN32_FIND_DATA lpFindFileData);
-
-        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
-        private static extern bool FindNextFileW(SafeFindHandle hFindFile,
-                                                out WIN32_FIND_DATA lpFindFileData);
-
-        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
-        {
-            public SafeFindHandle() : base(true) { }
-            protected override bool ReleaseHandle() => FindClose(handle);
-        }
-
-        private static IEnumerable<string> GetInternal(string path, string searchPattern, bool isGetDirs)
-        {
-            using var findHandle = FindFirstFileW(Path.Combine(path, searchPattern), out WIN32_FIND_DATA findData);
-            if (findHandle.IsInvalid) yield break;
-            do
-            {
-                if (findData.cFileName is "." or ".." or "thumbs.db") continue;
-                if (isGetDirs == ((findData.dwFileAttributes & FileAttributes.Directory) != 0)) yield return Path.Combine(path, findData.cFileName);
-            } while (FindNextFileW(findHandle, out findData));
-        }
-
-        public static ConcurrentBag<string> GetAllDirectories(string path, int deepness, int rootLength)
+        public static ConcurrentBag<string> GetDirectories(string path, int deepness, int rootLength)
         {
             if (!(deepness < 1 || path.Split('\\').Length < (deepness + rootLength))) return [];
 
@@ -78,12 +47,12 @@ namespace FastFileV3
             {
                 var relativePath = Path.Combine(path, subDir);
                 allDirs.Add(relativePath);
-                Parallel.ForEach(GetAllDirectories(relativePath, deepness, rootLength), (dir) => allDirs.Add(dir));
+                Parallel.ForEach(GetDirectories(relativePath, deepness, rootLength), (dir) => allDirs.Add(dir));
             });
             return allDirs;
         }
 
-        public static ConcurrentBag<string> GetAllFiles(string path, int deepness, int rootLength)
+        public static ConcurrentBag<string> GetFiles(string path, int deepness, int rootLength)
         {
             if (!(deepness < 1 || path.Split('\\').Length < (deepness + rootLength))) return [];
 
@@ -98,12 +67,12 @@ namespace FastFileV3
             _ = Parallel.ForEach(subDirs, (subDir) =>
             {
                 var relativePath = Path.Combine(path, subDir);
-                Parallel.ForEach(GetAllFiles(relativePath, deepness, rootLength), (file) => allFiles.Add(file));
+                Parallel.ForEach(GetFiles(relativePath, deepness, rootLength), (file) => allFiles.Add(file));
             });
             return allFiles;
         }
 
-        public static ConcurrentBag<string> GetAllFilesV2(string path)
+        public static ConcurrentBag<string> GetFilesv2(string path)
         {
             var allFiles = new ConcurrentBag<string>();
             var queue = new ConcurrentQueue<string>([path]);
@@ -115,7 +84,8 @@ namespace FastFileV3
             }
             return allFiles;
         }
-        public static ConcurrentBag<string> GetAllFilesV3(string path)
+
+        public static ConcurrentBag<string> GetFilesv3(string path)
         {
             var allFiles = new ConcurrentBag<string>();
             var queue = new ConcurrentStack<string>([path]);
@@ -128,7 +98,7 @@ namespace FastFileV3
             return allFiles;
         }
 
-        public static ConcurrentBag<string> GetAllFilesV4(string path)
+        public static ConcurrentBag<string> GetFilesv4(string path)
         {
             var allFiles = new ConcurrentBag<string>();
             var subFiles = GetFiles(path, "*");
@@ -138,10 +108,40 @@ namespace FastFileV3
             }
             foreach (var subDir in GetDirectories(path, "*"))
             {
-                foreach (var subFile in GetAllFilesV4(Path.Combine(path, subDir)))
+                foreach (var subFile in GetFilesv4(Path.Combine(path, subDir)))
                 { allFiles.Add(subFile); }
             }
             return allFiles;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool FindClose(IntPtr hFindFile);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern SafeFindHandle FindFirstFileW(string lpFileName,
+                                                   out WIN32_FIND_DATA lpFindFileData);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+        private static extern bool FindNextFileW(SafeFindHandle hFindFile,
+                                                out WIN32_FIND_DATA lpFindFileData);
+
+        private static IEnumerable<string> GetDirectories(string path, string searchPattern) => InternalSearch(path, searchPattern, true);
+        private static IEnumerable<string> GetFiles(string path, string searchPattern) => InternalSearch(path, searchPattern, false);
+        private static IEnumerable<string> InternalSearch(string path, string searchPattern, bool isGetDirs)
+        {
+            using var findHandle = FindFirstFileW(Path.Combine(path, searchPattern), out WIN32_FIND_DATA findData);
+            if (findHandle.IsInvalid) yield break;
+            do
+            {
+                if (findData.cFileName is "." or ".." or "thumbs.db") continue;
+                if (isGetDirs == ((findData.dwFileAttributes & FileAttributes.Directory) != 0)) yield return Path.Combine(path, findData.cFileName);
+            } while (FindNextFileW(findHandle, out findData));
+        }
+
+        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
+        {
+            public SafeFindHandle() : base(true) { }
+            protected override bool ReleaseHandle() => FindClose(handle);
         }
     }
 }

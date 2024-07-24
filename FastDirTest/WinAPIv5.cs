@@ -115,11 +115,9 @@ namespace FastFileV5
                 _deepnessLevel = deepnessLevel;
                 _cToken = cancellationToken;
                 _activeProducers = _maxDegreeOfParallelism;
-                _directoryStack = new ConcurrentStack<(string path, int depth)>();
+                _directoryStack = new ConcurrentStack<(string path, int depth)>([(_initialPath, 0)]);
                 _resultQueue = new BlockingCollection<WinAPIv5>(new ConcurrentQueue<WinAPIv5>());
                 _findDataPool = new ObjectPool<WIN32_FIND_DATA>(() => new WIN32_FIND_DATA(), maxSize: _maxDegreeOfParallelism * 2);
-
-                _directoryStack.Push((_initialPath, 0));
                 StartProducerTasks();
             }
 

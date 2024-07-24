@@ -8,20 +8,24 @@ using System.Security.Permissions;
 
 namespace FastFileV2
 {
+    public enum SearchFor
+    {
+        Files = 0,
+        Directories = 1,
+        FilesAndDirectories = 2,
+    }
+
     /// <summary>
-    /// Based on Opulus FastFileInfo <see cref="FastFile.FastFileInfo"/>
+    /// Based on Opulus FastFileInfo <see cref="FastFileInfo.FastFileInfo"/>
     /// </summary>
     [Serializable]
     public class WinAPIv2
     {
+        public readonly string AlternateName;
+        public readonly FileAttributes Attributes;
+        public readonly string FullName;
         public readonly long Length;
         public readonly string Name;
-        public readonly string AlternateName;
-        public readonly string FullName;
-        public readonly FileAttributes Attributes;
-        public string? DirectoryName => Path.GetDirectoryName(FullName);
-        public bool Exists => File.Exists(FullName);
-        public override string ToString() => FullName;
         public WinAPIv2(string filename) : this(new FileInfo(filename)) { }
 
         public WinAPIv2(FileInfo file)
@@ -34,6 +38,7 @@ namespace FastFileV2
                 Attributes = file.Attributes;
             }
         }
+
         internal WinAPIv2(string dir, WIN32_FIND_DATA findData)
         {
             Attributes = findData.dwFileAttributes;
@@ -42,9 +47,17 @@ namespace FastFileV2
             AlternateName = findData.cAlternateFileName;
             FullName = Path.Combine(dir, findData.cFileName);
         }
+
+        public string? DirectoryName => Path.GetDirectoryName(FullName);
+        public bool Exists => File.Exists(FullName);
+        public static long CombineHighLowInts(uint high, uint low) => (((long)high) << 0x20) | low;
+
         public static IEnumerable<WinAPIv2> EnumerateDirectories(string path) => EnumerateDirectories(path, "*");
+
         public static IEnumerable<WinAPIv2> EnumerateDirectories(string path, string searchPattern) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly);
+
         public static IEnumerable<WinAPIv2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption) => EnumerateDirectories(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Directories);
+
         public static IEnumerable<WinAPIv2> EnumerateDirectories(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
         {
             ExceptionHandle(path, searchPattern, searchOption);
@@ -52,7 +65,9 @@ namespace FastFileV2
         }
 
         public static IEnumerable<WinAPIv2> EnumerateFiles(string path) => EnumerateFiles(path, "*");
-        public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly);
+
+        public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.AllDirectories);
+
         public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Files);
 
         public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption, SearchFor searchFor)
@@ -61,6 +76,7 @@ namespace FastFileV2
             return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchOption, searchFor);
         }
 
+        public override string ToString() => FullName;
         private static void ExceptionHandle(string path, string searchPattern, SearchOption searchOption)
         {
             ArgumentNullException.ThrowIfNull(path);
@@ -69,80 +85,10 @@ namespace FastFileV2
                 throw new ArgumentOutOfRangeException(nameof(searchOption));
         }
 
-        private class FileEnumerable(string path, string filter, SearchOption searchOption, SearchFor searchFor) : IEnumerable<WinAPIv2>
-        {
-            public IEnumerator<WinAPIv2> GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
-            IEnumerator IEnumerable.GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
-        }
-
-        // Wraps a FindFirstFile handle.
-        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
-        {
-            [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]
-            [DllImport("kernel32.dll")]
-            private static extern bool FindClose(IntPtr handle);
-
-            [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
-            internal SafeFindHandle() : base(true) { }
-
-            protected override bool ReleaseHandle()
-            {
-                return FindClose(handle);
-            }
-        }
-
         [System.Security.SuppressUnmanagedCodeSecurity]
         public class FileEnumerator : IEnumerator<WinAPIv2>, IDisposable
         {
-            public void Dispose()
-            {
-                Dispose(true);
-                GC.SuppressFinalize(this);
-            }
-
             private bool _disposed = false;
-
-            protected virtual void Dispose(bool disposing)
-            {
-                if (!_disposed)
-                {
-                    if (disposing)
-                    {
-                        HndFile?.Dispose();
-                    }
-                    HndFile = null;
-                    _disposed = true;
-                }
-            }
-
-            ~FileEnumerator()
-            {
-                Dispose(false);
-            }
-
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-            private static extern SafeFindHandle FindFirstFile(string fileName, [In, Out] WIN32_FIND_DATA data);
-
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-            private static extern bool FindNextFile(SafeFindHandle hndFindFile, [In, Out, MarshalAs(UnmanagedType.LPStruct)] WIN32_FIND_DATA lpFindFileData);
-
-            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-            private static extern SafeFindHandle FindFirstFileEx(string fileName, int infoLevel, [In, Out] WIN32_FIND_DATA data, int searchScope, string notUsedNull, int additionalFlags);
-
-            private string InitialFolder { get; set; }
-            private string SearchFilter { get; set; }
-            //---
-            private string CurrentFolder { get; set; }
-            private SafeFindHandle HndFile { get; set; }
-            private WIN32_FIND_DATA FindData { get; set; }
-            private Stack<string> FolderStack { get; set; }
-            private bool IsCurrent { get; set; } = false;
-            private bool StepToNext { get; set; }
-            //---
-            private int InfoLevel { get; } = 0;
-            private int SearchScope { get; } = 0;
-            private bool UseEx { get; } = false;
-            private int AdditionalFlags { get; } = 0;
 
             public FileEnumerator(string initialFolder, string searchFilter, SearchOption searchOption) => Init(initialFolder, searchFilter, searchOption);
 
@@ -156,19 +102,46 @@ namespace FastFileV2
                 AdditionalFlags |= largeBuffer ? 2 : 0;
             }
 
-            private void Init(string initialFolder, string searchFilter, SearchOption searchOption)
+            ~FileEnumerator()
             {
-                InitialFolder = initialFolder;
-                SearchFilter = searchFilter;
-                Reset();
+                Dispose(false);
             }
 
             public WinAPIv2 Current => new(CurrentFolder, FindData);
 
-
-
             object IEnumerator.Current => new WinAPIv2(CurrentFolder, FindData);
 
+            private int AdditionalFlags { get; } = 0;
+
+            //---
+            private string CurrentFolder { get; set; }
+
+            private WIN32_FIND_DATA FindData { get; set; }
+
+            private Stack<string> FolderStack { get; set; }
+
+            private SafeFindHandle HndFile { get; set; }
+
+            //---
+            private int InfoLevel { get; } = 0;
+
+            private string InitialFolder { get; set; }
+
+            private bool IsCurrent { get; set; } = false;
+
+            private string SearchFilter { get; set; }
+
+            private int SearchScope { get; } = 0;
+
+            private bool StepToNext { get; set; }
+
+            private bool UseEx { get; } = false;
+
+            public void Dispose()
+            {
+                Dispose(true);
+                GC.SuppressFinalize(this);
+            }
             public bool MoveNext()
             {
                 while (true)
@@ -192,6 +165,41 @@ namespace FastFileV2
                 }
             }
 
+            public void Reset()
+            {
+                IsCurrent = false;
+                CurrentFolder = InitialFolder;
+                FindData = new WIN32_FIND_DATA();
+                FolderStack = new Stack<string>();
+                InitFolder(InitialFolder);
+            }
+
+            protected virtual void Dispose(bool disposing)
+            {
+                if (!_disposed)
+                {
+                    if (disposing)
+                    {
+                        HndFile?.Dispose();
+                    }
+                    HndFile = null;
+                    _disposed = true;
+                }
+            }
+            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+            private static extern SafeFindHandle FindFirstFile(string fileName, [In, Out] WIN32_FIND_DATA data);
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+            private static extern SafeFindHandle FindFirstFileEx(string fileName, int infoLevel, [In, Out] WIN32_FIND_DATA data, int searchScope, string notUsedNull, int additionalFlags);
+
+            [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+            private static extern bool FindNextFile(SafeFindHandle hndFindFile, [In, Out, MarshalAs(UnmanagedType.LPStruct)] WIN32_FIND_DATA lpFindFileData);
+            private void Init(string initialFolder, string searchFilter, SearchOption searchOption)
+            {
+                InitialFolder = initialFolder;
+                SearchFilter = searchFilter;
+                Reset();
+            }
             private void InitFolder(string folder)
             {
                 CurrentFolder = folder;
@@ -203,18 +211,29 @@ namespace FastFileV2
                     HndFile = FindFirstFile(searchPath, FindData);
                 IsCurrent = !HndFile.IsInvalid; // e.g. unaccessible C:\System Volume Information or filter like *.txt in a directory with no text files
             }
-
-            public void Reset()
-            {
-                IsCurrent = false;
-                CurrentFolder = InitialFolder;
-                FindData = new WIN32_FIND_DATA();
-                FolderStack = new Stack<string>();
-                InitFolder(InitialFolder);
-            }
         }
 
-        public static long CombineHighLowInts(uint high, uint low) => (((long)high) << 0x20) | low;
+        private class FileEnumerable(string path, string filter, SearchOption searchOption, SearchFor searchFor) : IEnumerable<WinAPIv2>
+        {
+            public IEnumerator<WinAPIv2> GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
+            IEnumerator IEnumerable.GetEnumerator() => new FileEnumerator(path, filter, searchOption, searchFor, true, false, false);
+        }
+
+        // Wraps a FindFirstFile handle.
+        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
+        {
+            [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
+            internal SafeFindHandle() : base(true) { }
+
+            protected override bool ReleaseHandle()
+            {
+                return FindClose(handle);
+            }
+
+            [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]
+            [DllImport("kernel32.dll")]
+            private static extern bool FindClose(IntPtr handle);
+        }
     }
 
     /// <summary>
@@ -240,11 +259,5 @@ namespace FastFileV2
         public string cAlternateFileName;
 
         public override string ToString() => "FileName = " + cFileName;
-    }
-    public enum SearchFor
-    {
-        Files = 0,
-        Directories = 1,
-        FilesAndDirectories = 2,
     }
 }
