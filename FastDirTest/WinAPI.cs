@@ -1,7 +1,6 @@
 ﻿using Microsoft.Win32.SafeHandles;
 using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
 using System.Security.Permissions;
 
 namespace FastFile
@@ -12,22 +11,25 @@ namespace FastFile
         #region Import from kernel32
 
         [Serializable, StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto), BestFitMapping(false)]
-        private struct WIN32_FIND_DATA
+        internal struct WIN32_FIND_DATA
         {
             public FileAttributes dwFileAttributes;
-            public FILETIME ftCreationTime;
-            public FILETIME ftLastAccessTime;
-            public FILETIME ftLastWriteTime;
-            public int nFileSizeHigh;
-            public int nFileSizeLow;
+            public uint ftCreationTime_dwLowDateTime;
+            public uint ftCreationTime_dwHighDateTime;
+            public uint ftLastAccessTime_dwLowDateTime;
+            public uint ftLastAccessTime_dwHighDateTime;
+            public uint ftLastWriteTime_dwLowDateTime;
+            public uint ftLastWriteTime_dwHighDateTime;
+            public uint nFileSizeHigh;
+            public uint nFileSizeLow;
             public int dwReserved0;
             public int dwReserved1;
-
-            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = MAX_PATH)]
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
             public string cFileName;
-
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
-            public string cAlternate;
+            public string cAlternateFileName;
+
+            public override string ToString() => "FileName = " + cFileName;
         }
         #endregion Import from kernel32
 
@@ -73,10 +75,9 @@ namespace FastFile
             if (hFile.IsInvalid) return;
             do
             {
-                // If a directory (and not a Reparse Point), and the name is not "." or ".." which exist as concepts in the file system,
+                // If a directory (and not a Reparse Point), and the name is not "." or ".."
                 if (fd.cFileName == "." || fd.cFileName == "..") continue;
                 string fullPath = Path.Combine(path, fd.cFileName);
-                // count the directory and add it to a list so we can iterate over it in parallel later on to maximize performance
                 if (fd.dwFileAttributes.HasFlag(FileAttributes.Directory))
                 {
                     folders.Push(fullPath);
@@ -112,23 +113,17 @@ namespace FastFile
 
         private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
         {
-            #region Internal Constructors
+
 
             [SecurityPermission(SecurityAction.LinkDemand, UnmanagedCode = true)]
             internal SafeFindHandle() : base(true) { }
 
-            #endregion Internal Constructors
 
-            #region Protected Methods
 
             protected override bool ReleaseHandle()
             {
                 return FindClose(handle);
             }
-
-            #endregion Protected Methods
-
-            #region Private Methods
 
             /// <summary>
             /// https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findclose
@@ -136,8 +131,6 @@ namespace FastFile
             [ReliabilityContract(Consistency.WillNotCorruptState, Cer.Success)]
             [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
             private static extern bool FindClose(IntPtr handle);
-
-            #endregion Private Methods
         }
 
         #endregion Private Classes

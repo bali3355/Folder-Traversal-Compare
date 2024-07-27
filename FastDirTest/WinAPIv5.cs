@@ -163,12 +163,10 @@ namespace FastFileV5
             {
                 if (!_processedDirectories.TryAdd(path, 1)) return;
                 if (_deepnessLevel != -1 && depth >= _deepnessLevel) return;
-                var searchPattern = _searchFor == SearchFor.Directories ? "*." : _searchPattern;
                 var findData = _findDataPool.Rent();
                 try
                 {
-                    using var hFind = FindFirstFile(Path.Combine(path, searchPattern), findData);
-
+                    using var hFind = FindFirstFile(Path.Combine(path, _searchPattern), findData);
                     if (hFind.IsInvalid) return;
                     
 
