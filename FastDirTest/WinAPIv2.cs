@@ -66,7 +66,7 @@ namespace FastFileV2
 
         public static IEnumerable<WinAPIv2> EnumerateFiles(string path) => EnumerateFiles(path, "*");
 
-        public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.AllDirectories);
+        public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly);
 
         public static IEnumerable<WinAPIv2> EnumerateFiles(string path, string searchPattern, SearchOption searchOption) => EnumerateFiles(path, searchPattern, SearchOption.TopDirectoryOnly, SearchFor.Files);
 

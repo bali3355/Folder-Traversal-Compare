@@ -133,19 +133,31 @@ namespace FastFileV3
 
         public static ConcurrentBag<string> GetFilesQueueParallel(string path)
         {
-            var searchResults = new ConcurrentBag<string>();
-            var folderQueue = new ConcurrentQueue<string>([path]);
-            while (!folderQueue.IsEmpty)
+            try
             {
-                var tmpQueue = folderQueue;
-                folderQueue = [];
-                Parallel.ForEach(tmpQueue, (currentPath) =>
-                {
-                    foreach (var subDir in DirectorySearch(currentPath, "*")) folderQueue.Enqueue(subDir);
-                    foreach (var subFile in FileSearch(currentPath, "*")) searchResults.Add(subFile);
-                });
+                var searchResults = new ConcurrentBag<string>();
+                var folderQueue = new ConcurrentQueue<string>([path]);
+                while (!folderQueue.IsEmpty) folderQueue = GetQueueSearch(searchResults, folderQueue);
+                return searchResults;
             }
-            return searchResults;
+            finally
+            {
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+            }
+        }
+
+        private static ConcurrentQueue<string> GetQueueSearch(ConcurrentBag<string> searchResults, ConcurrentQueue<string> folderQueue)
+        {
+            var tmpQueue = folderQueue;
+            folderQueue = [];
+            Parallel.ForEach(tmpQueue, (currentPath) =>
+            {
+                foreach (var subDir in DirectorySearch(currentPath, "*")) folderQueue.Enqueue(subDir);
+                foreach (var subFile in FileSearch(currentPath, "*")) searchResults.Add(subFile);
+            });
+            return folderQueue;
         }
 
         public static ConcurrentBag<string> GetFilesStack(string path)

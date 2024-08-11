@@ -2,6 +2,7 @@
 using System.Collections;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -14,66 +15,62 @@ namespace FastFileV5
         FilesAndDirectories = 2,
     }
 
-    public class ObjectPool<T>(Func<T> objectGenerator, int maxSize = int.MaxValue) where T : class
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    internal class WIN32_FIND_DATA
     {
-        private readonly Func<T> _objectGenerator = objectGenerator ?? throw new ArgumentNullException(nameof(objectGenerator));
-        private readonly ConcurrentBag<T> _objects = [];
+        public FileAttributes dwFileAttributes;
+        public uint ftCreationTime_dwLowDateTime;
+        public uint ftCreationTime_dwHighDateTime;
+        public uint ftLastAccessTime_dwLowDateTime;
+        public uint ftLastAccessTime_dwHighDateTime;
+        public uint ftLastWriteTime_dwLowDateTime;
+        public uint ftLastWriteTime_dwHighDateTime;
+        public uint nFileSizeHigh;
+        public uint nFileSizeLow;
+        public int dwReserved0;
+        public int dwReserved1;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string cFileName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
+        public string cAlternateFileName;
 
-        public T Rent()
+        public override string ToString() => "FileName = " + cFileName;
+    }
+
+    [StructLayout(LayoutKind.Auto)]
+    public readonly struct FileSystemEntry
+    {
+        public readonly string Name;
+        public readonly string FullName;
+        public readonly FileAttributes Attributes;
+        public readonly long Length;
+        private readonly Lazy<bool> _exists;
+        private readonly Lazy<string?> _directoryName;
+
+        public FileSystemEntry(string cFileName, StringBuilder fullName, FileAttributes attributes, long length)
         {
-            if (_objects.TryTake(out T item))
-                return item;
+            var tempFullName = fullName.ToString();
 
-            return _objectGenerator();
+            Name = string.Intern(cFileName);
+            FullName = tempFullName;
+            Attributes = attributes;
+            Length = length;
+            _exists = new(() => File.Exists(tempFullName));
+            _directoryName = new(() => Path.GetDirectoryName(tempFullName));
         }
-
-        public void Return(T item)
-        {
-            if (_objects.Count < maxSize)
-                _objects.Add(item);
-        }
+        public bool Exists => _exists.Value;
+        public string? DirectoryName => _directoryName.Value;
     }
 
     [Serializable]
     public class WinAPIv5
     {
-        public WinAPIv5(string filename) : this(new FileInfo(filename)) { }
 
-        public WinAPIv5(FileInfo file)
-        {
-            Name = file.Name;
-            FullName = file.FullName;
-            if (file.Exists)
-            {
-                Length = file.Length;
-                Attributes = file.Attributes;
-            }
-        }
-
-        internal WinAPIv5(string dir, WIN32_FIND_DATA findData)
-        {
-            Attributes = findData.dwFileAttributes;
-            Length = CombineHighLowInts(findData.nFileSizeHigh, findData.nFileSizeLow);
-            Name = findData.cFileName;
-            AlternateName = findData.cAlternateFileName;
-            FullName = Path.Combine(dir, findData.cFileName);
-        }
-
-        public string AlternateName { get; }
-        public FileAttributes Attributes { get; }
-        public string? DirectoryName => Path.GetDirectoryName(FullName);
-        public bool Exists => File.Exists(FullName);
-        public string FullName { get; }
-        public long Length { get; }
-        public string Name { get; }
-        public static long CombineHighLowInts(uint high, uint low) => (((long)high) << 32) | low;
-
-        public static IEnumerable<WinAPIv5> EnumerateFileSystem(
-            string path,
-            string searchPattern = "*",
-            SearchFor searchFor = SearchFor.Files,
-            int deepnessLevel = -1,
-            CancellationToken cancellationToken = default)
+        public static IEnumerable<FileSystemEntry> EnumerateFileSystem(string path,
+                                                                string searchPattern = "*",
+                                                                SearchFor searchFor = SearchFor.Files,
+                                                                int deepnessLevel = -1,
+                                                                CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(path);
             ArgumentNullException.ThrowIfNull(searchPattern);
@@ -81,26 +78,23 @@ namespace FastFileV5
             return new FileEnumerable(Path.GetFullPath(path), searchPattern, searchFor, deepnessLevel, cancellationToken);
         }
 
-        public override string ToString() => FullName;
-        private class FileEnumerable(string path, string filter, SearchFor searchFor, int deepnessLevel, CancellationToken cancellationToken) : IEnumerable<WinAPIv5>
+        private class FileEnumerable(string path, string filter, SearchFor searchFor, int deepnessLevel, CancellationToken cancellationToken) : IEnumerable<FileSystemEntry>
         {
             private readonly int _deepnessLevel = deepnessLevel <= 0 ? -1 : deepnessLevel;
             private readonly int _maxDegreeOfParallelism = (int)(Environment.ProcessorCount * 1.5);
-            public IEnumerator<WinAPIv5> GetEnumerator() => new ParallelFileEnumerator(path, filter, searchFor, _maxDegreeOfParallelism, _deepnessLevel, cancellationToken);
+            public IEnumerator<FileSystemEntry> GetEnumerator() => new ParallelFileEnumerator(path, filter, searchFor, _maxDegreeOfParallelism, _deepnessLevel, cancellationToken);
 
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
-        private class ParallelFileEnumerator : IEnumerator<WinAPIv5>
+        private class ParallelFileEnumerator : IEnumerator<FileSystemEntry>
         {
             private readonly CancellationToken _cToken;
             private readonly int _deepnessLevel;
-            private readonly ConcurrentStack<(string path, int depth)> _directoryStack;
-            private readonly ObjectPool<WIN32_FIND_DATA> _findDataPool;
+            private readonly ConcurrentStack<(StringBuilder path, int depth)> _directoryStack;
             private readonly string _initialPath;
             private readonly int _maxDegreeOfParallelism;
-            private readonly ConcurrentDictionary<string, byte> _processedDirectories = new();
-            private readonly BlockingCollection<WinAPIv5> _resultQueue;
+            private readonly BlockingCollection<FileSystemEntry> _resultQueue;
             private readonly SearchFor _searchFor;
             private readonly string _searchPattern;
             private int _activeProducers;
@@ -115,18 +109,17 @@ namespace FastFileV5
                 _deepnessLevel = deepnessLevel;
                 _cToken = cancellationToken;
                 _activeProducers = _maxDegreeOfParallelism;
-                _directoryStack = new ConcurrentStack<(string path, int depth)>([(_initialPath, 0)]);
-                _resultQueue = new BlockingCollection<WinAPIv5>(new ConcurrentQueue<WinAPIv5>());
-                _findDataPool = new ObjectPool<WIN32_FIND_DATA>(() => new WIN32_FIND_DATA(), maxSize: _maxDegreeOfParallelism * 2);
+                _directoryStack = new ConcurrentStack<(StringBuilder path, int depth)>([(new StringBuilder(_initialPath), 0)]);
+                _resultQueue = new BlockingCollection<FileSystemEntry>(new ConcurrentQueue<FileSystemEntry>());
                 StartProducerTasks();
             }
 
-            public WinAPIv5 Current { get; private set; }
+            public FileSystemEntry Current { get; private set; }
 
             object IEnumerator.Current => Current;
 
             [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-            public static extern SafeFindHandle FindFirstFile(string fileName, [In, Out] WIN32_FIND_DATA data);
+            public static extern SafeFindHandle FindFirstFile(StringBuilder fileName, [In, Out] WIN32_FIND_DATA data);
 
             [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
             public static extern bool FindNextFile(SafeFindHandle hndFindFile, [In, Out, MarshalAs(UnmanagedType.LPStruct)] WIN32_FIND_DATA lpFindFileData);
@@ -159,40 +152,49 @@ namespace FastFileV5
 
             public void Reset() => throw new NotSupportedException();
 
-            private void ProcessDirectory(string path, int depth)
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            public static bool IsToLeftOut(string fileName) => fileName switch
             {
-                if (!_processedDirectories.TryAdd(path, 1)) return;
+                "." or ".." or "Thumbs.db" => true,
+                _ => false
+            };
+
+            private void ProcessDirectory(StringBuilder path, int depth)
+            {
                 if (_deepnessLevel != -1 && depth >= _deepnessLevel) return;
-                var findData = _findDataPool.Rent();
+                var findData = new WIN32_FIND_DATA();
                 try
                 {
-                    using var hFind = FindFirstFile(Path.Combine(path, _searchPattern), findData);
+                    StringBuilder tempPath = new(260);
+                    tempPath.Append(path).Append(Path.DirectorySeparatorChar).Append(_searchPattern);
+                    using var hFind = FindFirstFile(tempPath, findData);
                     if (hFind.IsInvalid) return;
-                    
 
                     do
                     {
                         _cToken.ThrowIfCancellationRequested();
 
-                        if (findData.cFileName is "." or ".." or "Thumbs.db") continue;
+                        if (IsToLeftOut(findData.cFileName)) continue;
 
-                        StringBuilder stringBuilder = new();
-                        stringBuilder.Append(path).Append(Path.DirectorySeparatorChar).Append(findData.cFileName);
-                        var fullPath = stringBuilder.ToString();
+                        tempPath = new(260);
+                        tempPath.Append(path).Append(Path.DirectorySeparatorChar).Append(findData.cFileName);
 
                         if (findData.dwFileAttributes.HasFlag(FileAttributes.Directory))
                         {
-                            _directoryStack.Push((fullPath, depth + 1));
+                            _directoryStack.Push((tempPath, depth + 1));
 
-                            if (_searchFor != SearchFor.Files) _resultQueue.Add(new WinAPIv5(path, findData));
+                            if (_searchFor != SearchFor.Files) _resultQueue.Add(new FileSystemEntry(findData.cFileName, tempPath, findData.dwFileAttributes, 0));
                         }
-                        else if (_searchFor != SearchFor.Directories) _resultQueue.Add(new WinAPIv5(path, findData));
+                        else if (_searchFor != SearchFor.Directories)
+                        {
+                            long fileSize = ((long)findData.nFileSizeHigh << 32) | findData.nFileSizeLow;
+                            _resultQueue.Add(new FileSystemEntry(findData.cFileName, tempPath, findData.dwFileAttributes, fileSize));
+                        }
                     }
                     while (FindNextFile(hFind, findData));
                 }
                 catch (OperationCanceledException) { /* Expected when cancellation is requested */ }
                 catch (Exception ex) { Debug.WriteLine($"Error processing directory {path}: {ex.Message}"); }
-                finally { _findDataPool.Return(findData); }
             }
 
             private void ProducerWork()
@@ -221,7 +223,7 @@ namespace FastFileV5
             {
                 for (int i = 0; i < _maxDegreeOfParallelism; i++)
                 {
-                    Task.Factory.StartNew(ProducerWork, _cToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+                    _ = Task.Factory.StartNew(ProducerWork, _cToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
                 }
             }
         }
@@ -235,27 +237,5 @@ namespace FastFileV5
             [DllImport("kernel32.dll")]
             private static extern bool FindClose(IntPtr handle);
         }
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    internal class WIN32_FIND_DATA
-    {
-        public FileAttributes dwFileAttributes;
-        public uint ftCreationTime_dwLowDateTime;
-        public uint ftCreationTime_dwHighDateTime;
-        public uint ftLastAccessTime_dwLowDateTime;
-        public uint ftLastAccessTime_dwHighDateTime;
-        public uint ftLastWriteTime_dwLowDateTime;
-        public uint ftLastWriteTime_dwHighDateTime;
-        public uint nFileSizeHigh;
-        public uint nFileSizeLow;
-        public int dwReserved0;
-        public int dwReserved1;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string cFileName;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
-        public string cAlternateFileName;
-
-        public override string ToString() => "FileName = " + cFileName;
     }
 }

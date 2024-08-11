@@ -65,10 +65,10 @@ namespace FastDirTest
             TestEnumeratingFiles(WinAPIv3.GetFilesStack(SearchPath), "3. Gen WinAPI use, stacked search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesStackParallel(SearchPath), "3. Gen WinAPI use, parallel stacked search");
+            TestEnumeratingFiles(WinAPIv3.GetFilesRecursive(SearchPath), "3. Gen WinAPI use, recursive foreach search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesRecursive(SearchPath), "3. Gen WinAPI use, recursive foreach search");
+            TestEnumeratingFiles(WinAPIv3.GetFilesStackParallel(SearchPath), "3. Gen WinAPI use, parallel stacked search");
 
             stopwatch.Start();
             TestEnumeratingFiles(WinAPIv4.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, FastFileV4.SearchFor.Files), "4. Gen WinAPI use, paralleled Enumerate");
