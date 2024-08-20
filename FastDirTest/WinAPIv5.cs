@@ -1,71 +1,24 @@
-﻿using Microsoft.Win32.SafeHandles;
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace FastFileV5
+namespace FileSystemRetrieveCompare
 {
-    public enum SearchFor
-    {
-        Files = 0,
-        Directories = 1,
-        FilesAndDirectories = 2,
-    }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    internal class WIN32_FIND_DATA
-    {
-        public FileAttributes dwFileAttributes;
-        public uint ftCreationTime_dwLowDateTime;
-        public uint ftCreationTime_dwHighDateTime;
-        public uint ftLastAccessTime_dwLowDateTime;
-        public uint ftLastAccessTime_dwHighDateTime;
-        public uint ftLastWriteTime_dwLowDateTime;
-        public uint ftLastWriteTime_dwHighDateTime;
-        public uint nFileSizeHigh;
-        public uint nFileSizeLow;
-        public int dwReserved0;
-        public int dwReserved1;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
-        public string cFileName;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)]
-        public string cAlternateFileName;
-
-        public override string ToString() => "FileName = " + cFileName;
-    }
-
-    [StructLayout(LayoutKind.Auto)]
-    public readonly struct FileSystemEntry
-    {
-        public readonly string Name;
-        public readonly string FullName;
-        public readonly FileAttributes Attributes;
-        public readonly long Length;
-        private readonly Lazy<bool> _exists;
-        private readonly Lazy<string?> _directoryName;
-
-        public FileSystemEntry(string cFileName, StringBuilder fullName, FileAttributes attributes, long length)
-        {
-            var tempFullName = fullName.ToString();
-
-            Name = string.Intern(cFileName);
-            FullName = tempFullName;
-            Attributes = attributes;
-            Length = length;
-            _exists = new(() => File.Exists(tempFullName));
-            _directoryName = new(() => Path.GetDirectoryName(tempFullName));
-        }
-        public bool Exists => _exists.Value;
-        public string? DirectoryName => _directoryName.Value;
-    }
-
     [Serializable]
     public class WinAPIv5
     {
-
+        /// <summary>
+        /// Enumerates the filesystem entries.
+        /// </summary>
+        /// <param name="path"></param>
+        /// <param name="searchPattern"></param>
+        /// <param name="searchFor"></param>
+        /// <param name="deepnessLevel"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns> An enumerable of <see cref="FileSystemEntry"/> objects. </returns>
         public static IEnumerable<FileSystemEntry> EnumerateFileSystem(string path,
                                                                 string searchPattern = "*",
                                                                 SearchFor searchFor = SearchFor.Files,
@@ -87,6 +40,10 @@ namespace FastFileV5
             IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
         }
 
+        /// <summary>
+        /// The main parallel enumerator, which is used to enumerate files and folders.
+        /// </summary>
+        [System.Security.SuppressUnmanagedCodeSecurity]
         private class ParallelFileEnumerator : IEnumerator<FileSystemEntry>
         {
             private readonly CancellationToken _cToken;
@@ -100,6 +57,15 @@ namespace FastFileV5
             private int _activeProducers;
             private bool _isCompleted;
 
+            /// <summary>
+            /// Initializes a new instance of the <see cref="ParallelFileEnumerator"/> class.
+            /// </summary>
+            /// <param name="path"> The main folder to start enumerating. </param>
+            /// <param name="searchPattern"> Given filter for search </param>
+            /// <param name="searchFor"> Search for files or folders or both </param>
+            /// <param name="maxDegreeOfParallelism"> The maximum degree of parallelism, which is the maximum number of tasks that can be active at the same time. </param>
+            /// <param name="deepnessLevel"> The deepness level of the search </param>
+            /// <param name="cancellationToken"></param>
             public ParallelFileEnumerator(string path, string searchPattern, SearchFor searchFor, int maxDegreeOfParallelism, int deepnessLevel, CancellationToken cancellationToken)
             {
                 _initialPath = path;
@@ -114,15 +80,30 @@ namespace FastFileV5
                 StartProducerTasks();
             }
 
-            public FileSystemEntry Current { get; private set; }
-
-            object IEnumerator.Current => Current;
-
+            #region WinAPI 32 methods
+            /// <summary>
+            /// Searches for the first file or directory that matches the specified search criteria.
+            /// </summary>
+            /// <param name="fileName"></param>
+            /// <param name="data"></param>
+            /// <returns></returns>
             [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
             public static extern SafeFindHandle FindFirstFile(StringBuilder fileName, [In, Out] WIN32_FIND_DATA data);
 
+            /// <summary>
+            /// Searches for the next file or directory that matches the specified search criteria.
+            /// </summary>
+            /// <param name="hndFindFile"></param>
+            /// <param name="lpFindFileData"></param>
+            /// <returns></returns>
             [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
             public static extern bool FindNextFile(SafeFindHandle hndFindFile, [In, Out, MarshalAs(UnmanagedType.LPStruct)] WIN32_FIND_DATA lpFindFileData);
+
+            #endregion
+
+            public void Reset() => throw new NotSupportedException();
+            public FileSystemEntry Current { get; private set; }
+            object IEnumerator.Current => Current;
 
             public void Dispose()
             {
@@ -131,6 +112,10 @@ namespace FastFileV5
                 _directoryStack.Clear();
             }
 
+            /// <summary>
+            /// Moves the enumerator to the next element from the <see cref="BlockingCollection{T}"/>.
+            /// </summary>
+            /// <returns>Enumerated <see cref="FileSystemEntry"/> items</returns>
             public bool MoveNext()
             {
                 if (_isCompleted) return false;
@@ -150,8 +135,12 @@ namespace FastFileV5
                 return false;
             }
 
-            public void Reset() => throw new NotSupportedException();
 
+            /// <summary>
+            /// Checks if the <paramref name="fileName"/> is <c>reparse point</c> or <c>Thumbs.db</c>
+            /// </summary>
+            /// <param name="fileName"></param>
+            /// <returns></returns>
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             public static bool IsToLeftOut(string fileName) => fileName switch
             {
@@ -159,21 +148,29 @@ namespace FastFileV5
                 _ => false
             };
 
+            /// <summary>
+            /// Processes the <see cref="ConcurrentStack{T}"/>
+            /// Main thread, which gets the full <paramref name="path"/> and <paramref name="depth"/>
+            /// </summary>
+            /// <param name="path"></param>
+            /// <param name="depth"></param>
             private void ProcessDirectory(StringBuilder path, int depth)
             {
+                //If the depth is reached, then return
                 if (_deepnessLevel != -1 && depth >= _deepnessLevel) return;
                 var findData = new WIN32_FIND_DATA();
                 try
                 {
-                    StringBuilder tempPath = new(260);
+                    //Finding first file and then check if it's a directory
+                    var tempPath = new StringBuilder(260);
                     tempPath.Append(path).Append(Path.DirectorySeparatorChar).Append(_searchPattern);
                     using var hFind = FindFirstFile(tempPath, findData);
+                    //If it's not a directory, then return
                     if (hFind.IsInvalid) return;
 
                     do
                     {
                         _cToken.ThrowIfCancellationRequested();
-
                         if (IsToLeftOut(findData.cFileName)) continue;
 
                         tempPath = new(260);
@@ -197,6 +194,10 @@ namespace FastFileV5
                 catch (Exception ex) { Debug.WriteLine($"Error processing directory {path}: {ex.Message}"); }
             }
 
+            /// <summary>
+            /// Thread that consumes the <see cref="BlockingCollection{T}"/>.
+            /// Each folder is processed by <see cref="ProcessDirectory(StringBuilder, int)"/>
+            /// </summary>
             private void ProducerWork()
             {
                 try
@@ -219,23 +220,14 @@ namespace FastFileV5
                 }
             }
 
+            /// <summary>
+            /// Creates <see cref="Task"/> for each <see cref="ProducerWork()"/>
+            /// </summary>
             private void StartProducerTasks()
             {
                 for (int i = 0; i < _maxDegreeOfParallelism; i++)
-                {
                     _ = Task.Factory.StartNew(ProducerWork, _cToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-                }
             }
-        }
-
-        private sealed class SafeFindHandle : SafeHandleZeroOrMinusOneIsInvalid
-        {
-            internal SafeFindHandle() : base(true) { }
-
-            protected override bool ReleaseHandle() => FindClose(handle);
-
-            [DllImport("kernel32.dll")]
-            private static extern bool FindClose(IntPtr handle);
         }
     }
 }

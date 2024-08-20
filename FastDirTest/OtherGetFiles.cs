@@ -1,7 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 
-namespace FastDirTest
+namespace FileSystemRetrieveCompare
 {
     internal static class OtherGetFiles
     {

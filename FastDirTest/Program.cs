@@ -1,12 +1,6 @@
-﻿using FastFile;
-using FastFileV2;
-using FastFileV3;
-using FastFileV4;
-using FastFileV5;
-using FastFileInfo;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 
-namespace FastDirTest
+namespace FileSystemRetrieveCompare
 {
     public static class StopwatchExtensions
     {
@@ -18,6 +12,7 @@ namespace FastDirTest
             return time;
         }
     }
+
     internal class Program
     {
         internal const int nameWidth = 60, timeWidth = 30, countWidth = 30;
@@ -35,43 +30,43 @@ namespace FastDirTest
             Console.WriteLine(line);
 
             stopwatch.Start();
-            TestEnumeratingFiles(FastFileInfo.FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null), "FastFileInfo enumerator");
-
-            stopwatch.Start();
             TestEnumeratingFiles(WinAPI.GetFiles(SearchPath), "1. Gen WinAPI use");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv2.EnumerateFiles(SearchPath), "2. Gen WinAPI use");
+            TestEnumeratingFiles(WinAPIv2.GetFilesRecursive(SearchPath), "2. Gen WinAPI use, recursive search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesRecursive(SearchPath), "3. Gen WinAPI use, recursive search");
+            TestEnumeratingFiles(WinAPIv2.GetFilesRecursiveParallel(SearchPath), "2. Gen WinAPI use, parallel recursive search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesRecursiveParallel(SearchPath), "3. Gen WinAPI use, parallel recursive search");
+            TestEnumeratingFiles(WinAPIv2.GetFilesRecursiveNew(SearchPath), "2. Gen WinAPI use, new recursive search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesRecursiveNew(SearchPath), "3. Gen WinAPI use, new recursive search");
+            TestEnumeratingFiles(WinAPIv2.GetFilesRecursiveNewParallel(SearchPath), "2. Gen WinAPI use, new parallel recursive search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesRecursiveNewParallel(SearchPath), "3. Gen WinAPI use, new parallel recursive search");
+            TestEnumeratingFiles(WinAPIv2.GetFilesQueue(SearchPath), "2. Gen WinAPI use, queued search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesQueue(SearchPath), "3. Gen WinAPI use, queued search");
+            TestEnumeratingFiles(WinAPIv2.GetFilesQueueParallel(SearchPath), "2. Gen WinAPI use, parallel queued search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesQueueParallel(SearchPath), "3. Gen WinAPI use, parallel queued search");
+            TestEnumeratingFiles(WinAPIv2.GetFilesStack(SearchPath), "2. Gen WinAPI use, stacked search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesStack(SearchPath), "3. Gen WinAPI use, stacked search");
+            TestEnumeratingFiles(WinAPIv2.GetFilesRecursive(SearchPath), "2. Gen WinAPI use, recursive foreach search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesRecursive(SearchPath), "3. Gen WinAPI use, recursive foreach search");
+            TestEnumeratingFiles(WinAPIv2.GetFilesStackParallel(SearchPath), "2. Gen WinAPI use, parallel stacked search");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv3.GetFilesStackParallel(SearchPath), "3. Gen WinAPI use, parallel stacked search");
+            TestEnumeratingFiles(FastFileInfo.FastFileInfo.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, null), "FastFileInfo enumerator");
 
             stopwatch.Start();
-            TestEnumeratingFiles(WinAPIv4.EnumerateFiles(SearchPath, "*", SearchOption.AllDirectories, FastFileV4.SearchFor.Files), "4. Gen WinAPI use, paralleled Enumerate");
+            TestEnumeratingFiles(WinAPIv3.EnumerateFileSystem(SearchPath), "3. Gen WinAPI use, improved FastFileInfo enumerator");
+
+            stopwatch.Start();
+            TestEnumeratingFiles(WinAPIv4.EnumerateFileSystem(SearchPath), "4. Gen WinAPI use, paralleled Enumerate");
 
             stopwatch.Start();
             TestEnumeratingFiles(WinAPIv5.EnumerateFileSystem(SearchPath), "5. Gen WinAPI use, improved paralleled enumerate");
